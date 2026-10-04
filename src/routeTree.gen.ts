@@ -10,10 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedChangesRouteImport } from './routes/_authenticated/changes'
 import { Route as AuthenticatedConsoleRouteImport } from './routes/_authenticated/console'
+import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedManagerRouteImport } from './routes/_authenticated/manager'
 import { Route as AuthenticatedMapRouteImport } from './routes/_authenticated/map'
 import { Route as AuthenticatedRenterRouteImport } from './routes/_authenticated/renter'
@@ -27,62 +29,71 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
-  id: '/_authenticated/admin',
+  id: '/admin',
   path: '/admin',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedChangesRoute = AuthenticatedChangesRouteImport.update({
-  id: '/_authenticated/changes',
+  id: '/changes',
   path: '/changes',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedConsoleRoute = AuthenticatedConsoleRouteImport.update({
-  id: '/_authenticated/console',
+  id: '/console',
   path: '/console',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedManagerRoute = AuthenticatedManagerRouteImport.update({
-  id: '/_authenticated/manager',
+  id: '/manager',
   path: '/manager',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedMapRoute = AuthenticatedMapRouteImport.update({
-  id: '/_authenticated/map',
+  id: '/map',
   path: '/map',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedRenterRoute = AuthenticatedRenterRouteImport.update({
-  id: '/_authenticated/renter',
+  id: '/renter',
   path: '/renter',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedReviewerRoute = AuthenticatedReviewerRouteImport.update({
-  id: '/_authenticated/reviewer',
+  id: '/reviewer',
   path: '/reviewer',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedPropertyAddressIdRoute =
   AuthenticatedPropertyAddressIdRouteImport.update({
-    id: '/_authenticated/property/$addressId',
+    id: '/property/$addressId',
     path: '/property/$addressId',
-    getParentRoute: () => rootRouteImport,
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedRulesIdRoute = AuthenticatedRulesIdRouteImport.update({
-  id: '/_authenticated/rules/$id',
+  id: '/rules/$id',
   path: '/rules/$id',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedSourcesDocIdRoute =
   AuthenticatedSourcesDocIdRouteImport.update({
-    id: '/_authenticated/sources/$docId',
+    id: '/sources/$docId',
     path: '/sources/$docId',
-    getParentRoute: () => rootRouteImport,
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -91,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRoute
   '/changes': typeof AuthenticatedChangesRoute
   '/console': typeof AuthenticatedConsoleRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
   '/manager': typeof AuthenticatedManagerRoute
   '/map': typeof AuthenticatedMapRoute
   '/renter': typeof AuthenticatedRenterRoute
@@ -105,6 +117,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthenticatedAdminRoute
   '/changes': typeof AuthenticatedChangesRoute
   '/console': typeof AuthenticatedConsoleRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
   '/manager': typeof AuthenticatedManagerRoute
   '/map': typeof AuthenticatedMapRoute
   '/renter': typeof AuthenticatedRenterRoute
@@ -116,10 +129,12 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/changes': typeof AuthenticatedChangesRoute
   '/_authenticated/console': typeof AuthenticatedConsoleRoute
+  '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/manager': typeof AuthenticatedManagerRoute
   '/_authenticated/map': typeof AuthenticatedMapRoute
   '/_authenticated/renter': typeof AuthenticatedRenterRoute
@@ -136,6 +151,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/changes'
     | '/console'
+    | '/dashboard'
     | '/manager'
     | '/map'
     | '/renter'
@@ -150,6 +166,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/changes'
     | '/console'
+    | '/dashboard'
     | '/manager'
     | '/map'
     | '/renter'
@@ -160,10 +177,12 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/_authenticated'
     | '/auth'
     | '/_authenticated/admin'
     | '/_authenticated/changes'
     | '/_authenticated/console'
+    | '/_authenticated/dashboard'
     | '/_authenticated/manager'
     | '/_authenticated/map'
     | '/_authenticated/renter'
@@ -175,17 +194,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
-  AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
-  AuthenticatedChangesRoute: typeof AuthenticatedChangesRoute
-  AuthenticatedConsoleRoute: typeof AuthenticatedConsoleRoute
-  AuthenticatedManagerRoute: typeof AuthenticatedManagerRoute
-  AuthenticatedMapRoute: typeof AuthenticatedMapRoute
-  AuthenticatedRenterRoute: typeof AuthenticatedRenterRoute
-  AuthenticatedReviewerRoute: typeof AuthenticatedReviewerRoute
-  AuthenticatedPropertyAddressIdRoute: typeof AuthenticatedPropertyAddressIdRoute
-  AuthenticatedRulesIdRoute: typeof AuthenticatedRulesIdRoute
-  AuthenticatedSourcesDocIdRoute: typeof AuthenticatedSourcesDocIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -195,6 +205,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -209,80 +226,100 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/changes': {
       id: '/_authenticated/changes'
       path: '/changes'
       fullPath: '/changes'
       preLoaderRoute: typeof AuthenticatedChangesRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/console': {
       id: '/_authenticated/console'
       path: '/console'
       fullPath: '/console'
       preLoaderRoute: typeof AuthenticatedConsoleRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/dashboard': {
+      id: '/_authenticated/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/manager': {
       id: '/_authenticated/manager'
       path: '/manager'
       fullPath: '/manager'
       preLoaderRoute: typeof AuthenticatedManagerRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/map': {
       id: '/_authenticated/map'
       path: '/map'
       fullPath: '/map'
       preLoaderRoute: typeof AuthenticatedMapRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/renter': {
       id: '/_authenticated/renter'
       path: '/renter'
       fullPath: '/renter'
       preLoaderRoute: typeof AuthenticatedRenterRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/reviewer': {
       id: '/_authenticated/reviewer'
       path: '/reviewer'
       fullPath: '/reviewer'
       preLoaderRoute: typeof AuthenticatedReviewerRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/property/$addressId': {
       id: '/_authenticated/property/$addressId'
       path: '/property/$addressId'
       fullPath: '/property/$addressId'
       preLoaderRoute: typeof AuthenticatedPropertyAddressIdRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/rules/$id': {
       id: '/_authenticated/rules/$id'
       path: '/rules/$id'
       fullPath: '/rules/$id'
       preLoaderRoute: typeof AuthenticatedRulesIdRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/sources/$docId': {
       id: '/_authenticated/sources/$docId'
       path: '/sources/$docId'
       fullPath: '/sources/$docId'
       preLoaderRoute: typeof AuthenticatedSourcesDocIdRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
   }
 }
 
-const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  AuthRoute: AuthRoute,
+interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
+  AuthenticatedChangesRoute: typeof AuthenticatedChangesRoute
+  AuthenticatedConsoleRoute: typeof AuthenticatedConsoleRoute
+  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedManagerRoute: typeof AuthenticatedManagerRoute
+  AuthenticatedMapRoute: typeof AuthenticatedMapRoute
+  AuthenticatedRenterRoute: typeof AuthenticatedRenterRoute
+  AuthenticatedReviewerRoute: typeof AuthenticatedReviewerRoute
+  AuthenticatedPropertyAddressIdRoute: typeof AuthenticatedPropertyAddressIdRoute
+  AuthenticatedRulesIdRoute: typeof AuthenticatedRulesIdRoute
+  AuthenticatedSourcesDocIdRoute: typeof AuthenticatedSourcesDocIdRoute
+}
+
+const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedChangesRoute: AuthenticatedChangesRoute,
   AuthenticatedConsoleRoute: AuthenticatedConsoleRoute,
+  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedManagerRoute: AuthenticatedManagerRoute,
   AuthenticatedMapRoute: AuthenticatedMapRoute,
   AuthenticatedRenterRoute: AuthenticatedRenterRoute,
@@ -290,6 +327,15 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedPropertyAddressIdRoute: AuthenticatedPropertyAddressIdRoute,
   AuthenticatedRulesIdRoute: AuthenticatedRulesIdRoute,
   AuthenticatedSourcesDocIdRoute: AuthenticatedSourcesDocIdRoute,
+}
+
+const AuthenticatedRouteRouteWithChildren =
+  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+
+const rootRouteChildren: RootRouteChildren = {
+  IndexRoute: IndexRoute,
+  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AuthRoute: AuthRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
