@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { importStart, importProperties, importSources, importFinish, extractSource, geocodeBatch } from "@/lib/admin.functions";
@@ -36,7 +36,7 @@ function Admin() {
   const fExtract = useServerFn(extractSource), fGeo = useServerFn(geocodeBatch), fExport = useServerFn(exportSubmission);
   const [job, setJob] = useState<{ label: string; done: number; total: number; log: string[] } | null>(null);
   const [stop, setStop] = useState(false);
-  const stopRef = { current: false };
+  const stopRef = useRef(false);
 
   const log = (label: string, done: number, total: number, line?: string) =>
     setJob((j) => ({ label, done, total, log: line ? [line, ...(j?.log ?? [])].slice(0, 60) : j?.log ?? [] }));
