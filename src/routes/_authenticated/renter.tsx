@@ -32,6 +32,7 @@ function Renter() {
   const q = search.q ?? "";
   const setQ = (v: string) => navigate({ search: v ? { q: v } : {}, replace: true });
   const [picked, setPicked] = useState<string[]>([]);
+  const [advanced, setAdvanced] = useState(false);
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
     return data.rows.filter((r) => !s || `${r.property.address_id} ${r.property.street_address} ${r.property.postal_city} ${r.property.zip}`.toLowerCase().includes(s)).slice(0, limit);
@@ -51,7 +52,30 @@ function Renter() {
       <label>As of <Input type="date" className="w-44" value={asOf} onChange={e=>setAsOf(e.target.value)}/></label>
       {data.ruleCount === 0 && <p className="text-sm text-st-unknown">No rules extracted yet — categories will show as not established until a reviewer runs extraction.</p>}
       <Input placeholder="Search by street, ZIP, postal city or ID (e.g. A0001)" value={q} onChange={(e) => {setQ(e.target.value);setLimit(40)}} className="max-w-xl" />
-      <div className="paper overflow-x-auto rounded-sm">
+      <button className="text-sm underline" onClick={() => setAdvanced((v) => !v)}>{advanced ? "Show simple result cards" : "Show full table (advanced)"}</button>
+      {!advanced && (
+        <div className="grid gap-3 md:grid-cols-2">
+          {list.slice(0, q ? limit : 12).map((r) => (
+            <div key={r.property.id} className="paper rounded-sm p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <Link to="/property/$addressId" params={{ addressId: r.property.address_id }} className="font-serif text-lg text-primary hover:underline">{r.property.street_address}</Link>
+                  <div className="font-mono text-[0.68rem] text-muted-foreground">{r.property.address_id} · {r.property.postal_city}, {r.property.state} {r.property.zip}</div>
+                </div>
+                <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={picked.includes(r.property.address_id)} onChange={() => toggle(r.property.address_id)} />Compare</label>
+              </div>
+              <div className="mt-2 text-xs">Legal city: {r.resolution?.status === "resolved" ? r.resolution.place_name ?? "unincorporated" : "not yet placed"}</div>
+              <ul className="mt-2 space-y-1 text-sm">
+                {CATEGORIES.map((c) => {
+                  const res = r.category_results?.[c] ?? [];
+                  return <li key={c} className="flex justify-between gap-2"><span>{CATEGORY_LABEL[c]}</span><span className="flex flex-wrap justify-end gap-1">{res.length ? res.map((x) => <Status key={x} value={x} />) : <span className="text-xs text-muted-foreground">not established</span>}</span></li>;
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+      {advanced && <div className="paper overflow-x-auto rounded-sm">
         <table className="w-full text-sm">
           <thead className="eyebrow border-b border-border text-left"><tr><th className="p-2">Compare</th><th className="p-2">Address</th><th className="p-2">Postal city</th><th className="p-2">Legal city</th>{CATEGORIES.map((c) => <th key={c} className="p-2">{CATEGORY_LABEL[c]}</th>)}</tr></thead>
           <tbody>
@@ -61,18 +85,18 @@ function Renter() {
                 <td className="p-2"><Link to="/property/$addressId" params={{ addressId: r.property.address_id }} className="text-primary underline-offset-2 hover:underline">{r.property.street_address}</Link><div className="font-mono text-[0.68rem] text-muted-foreground">{r.property.address_id} · {r.property.state} {r.property.zip}</div></td>
                 <td className="p-2 text-muted-foreground">{r.property.postal_city}</td>
                 <td className="p-2">{r.resolution?.status === "resolved" ? r.resolution.place_name ?? "unincorporated" : <Status value="unknown" />}</td>
-                {CATEGORIES.map((c) => <td key={c} className="p-2"><Status value={r.categories[c]} /></td>)}
+                {CATEGORIES.map((c) => <td key={c} className="p-2"><span className="flex flex-col gap-0.5">{(r.category_results?.[c] ?? []).length ? r.category_results[c]!.map((x) => <Status key={x} value={x} />) : <Status value={null} />}</span></td>)}
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </div>}
 
       {list.length===0 && <p>No matching address in the supplied sample. This does not mean that no law applies.</p>}
       {list.length===limit && <button className="underline" onClick={()=>setLimit(n=>n+40)}>Show more addresses</button>}
       {picked.length > 0 && (
         <section>
-          <h2 className="mb-3 text-2xl">Legal profile comparison</h2>
+          <h2 className="mb-1 text-2xl">Legal profile comparison</h2><p className="mb-3 text-xs text-muted-foreground">Same date ({asOf}) for every address. Shows actual terms and citations; there is no overall score.</p>
           <div className="grid gap-4 md:grid-cols-3">
             {compare.map((c, i) => {
               const r = c.data;
@@ -87,7 +111,7 @@ function Renter() {
                       return (
                         <li key={cat} className="flex items-start justify-between gap-2 border-b border-border/50 pb-1">
                           <span>{CATEGORY_LABEL[cat]}</span>
-                          <span className="flex flex-col items-end gap-0.5">{outs.length ? outs.map((o) => <Status key={o.rule_id} value={o.result} />) : <span className="text-xs text-muted-foreground">not established</span>}</span>
+                          <span className="flex flex-col items-end gap-1 text-right">{outs.length ? outs.map((o) => <span key={o.rule_id} className="block"><Status value={o.result} /><span className="block text-xs">{o.key_value ?? o.title}</span><span className="block text-[0.65rem] text-muted-foreground">{o.citation}{o.missing.length ? ` · ${o.missing.length} facts needed` : ""}</span></span>) : <span className="text-xs text-muted-foreground">not established</span>}</span>
                         </li>
                       );
                     })}

@@ -87,7 +87,7 @@ function PropertyReport() {
         const outs = r.outcomes.filter((o) => o.category === cat && o.result);
         return (
           <section key={cat}>
-            <h2 className="mb-2 flex items-center gap-3 text-2xl">{CATEGORY_LABEL[cat]} <Status value={r.summary.categories[cat]} /></h2>
+            <h2 className="mb-2 flex items-center gap-3 text-2xl">{CATEGORY_LABEL[cat]} {(r.summary.category_results?.[cat] ?? []).map((x: string) => <Status key={x} value={x} />)}</h2>
             {outs.length === 0 ? (
               <p className="text-sm text-muted-foreground">Coverage not established from the supplied, extracted sources.</p>
             ) : (
