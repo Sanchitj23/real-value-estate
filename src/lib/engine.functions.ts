@@ -4,7 +4,7 @@ import { z } from "zod";
 import { loadEngineInputs, publicClient, type EngineInputs, assertDb } from "./data.server";
 import {
   CATEGORIES, DEFAULT_AS_OF, evaluateProperty,
-  type ExportResult, type RuleLite, type RuleOutcome, lifecycleOn,
+  type ExportResult, type RuleLite, type RuleOutcome, lifecycleOn, normCity,
 } from "./engine/applicability";
 
 import { QueryDate } from "./engine/dates";
@@ -15,6 +15,12 @@ import { MODEL, PIPELINE, pendingChunks } from "./engine/extraction";
 import type { Json } from "@/integrations/supabase/types";
 import { checkCase } from "./engine/case-check";
 const DateStr = QueryDate;
+/** Challenge IDs encode the jurisdiction they refer to; mappings must match it independently of the mapped rule. */
+function expectedIdentity(cid: string): { state: string; city: string | null } | null {
+  const p = cid.split("-")[0];
+  const m: Record<string, { state: string; city: string | null }> = { CA: { state: "CA", city: null }, NJ: { state: "NJ", city: null }, MA: { state: "MA", city: null }, HOB: { state: "NJ", city: "Hoboken" }, JC: { state: "NJ", city: "Jersey City" } };
+  return (p && m[p]) || null;
+}
 const RANK: Record<string, number> = { applies: 4, unknown: 5, not_yet_effective: 3, pending: 2, superseded: 1 };
 
 
@@ -37,8 +43,11 @@ function summarize(outcomes: RuleOutcome[]) {
     const best = outcomes.filter((o) => o.category === c && o.result).sort((a, b) => (RANK[b.result!] ?? 0) - (RANK[a.result!] ?? 0))[0];
     cats[c] = best?.result ?? null;
   }
+  const mixed: Record<string, string[]> = {};
+  for (const c of CATEGORIES) mixed[c] = Array.from(new Set(outcomes.filter((o) => o.category === c && o.result).map((o) => o.result!)));
   return {
     categories: cats,
+    category_results: mixed,
     unknown_count: outcomes.filter((o) => o.result === "unknown").length,
     conflict: outcomes.some((o) => o.conflict_flag),
   };
@@ -162,7 +171,16 @@ async function runTests(inp: EngineInputs) {
       else if (t.type === "pending") rows = compareRule(inp, key, t.as_of as string, inp.rules, t.as_of as string, applyPatch(inp.rules, key, { legal_status: "enacted", effective_date: t.as_of as string }));
       else rows = compareRule(inp, key, t.as_of as string, inp.rules, t.as_of as string, inp.rules);
       const conflictCities=(t.conflict_with ?? []).map((id:string)=>inp.rules.find(r=>r.rule_key===mapping.get(id))?.city).filter((c: string|null|undefined):c is string=>!!c);
-      const check=checkCase(t,inp.rules.find(r=>r.rule_key===key)!,rows,conflictCities);
+      const mappedRule=inp.rules.find(r=>r.rule_key===key)!;
+      const check=checkCase(t,mappedRule,rows,conflictCities);
+      const identity=expectedIdentity(cid);
+      if(identity && !(mappedRule.state===identity.state && (identity.city ? normCity(mappedRule.city)===normCity(identity.city) : mappedRule.level==="state"))) {
+        check.status="failed"; check.note=`Semantic mapping mismatch: ${cid} expects ${identity.city ?? identity.state+" statewide"}, but ${key} is ${mappedRule.city ?? mappedRule.state+" statewide"}. `+check.note;
+      }
+      if(t.type==="negative") {
+        const bad=evalAll(inp,t.as_of as string).flatMap(x=>x.outcomes.filter(o=>o.category===mappedRule.category && (o.result==="applies"||o.result==="unknown") && x.property.state===mappedRule.state && inp.rules.find(r=>r.rule_key===o.rule_key)?.legal_status!=="enacted").map(()=>x.property.address_id));
+        if(bad.length){check.status="failed";check.failed_address_ids=Array.from(new Set([...check.failed_address_ids,...bad]));check.note="Other non-enacted rules in this category still report results. "+check.note;}
+      }
       if((t.conflict_with ?? []).length !== conflictCities.length && check.status!=="failed") check.status="unresolved";
       return { challenge_id: cid, rule_key: key, rows, summary: bucket(rows), check };
     });
@@ -217,9 +235,9 @@ export const exportSubmission = createServerFn({ method: "POST" })
     const runs = await readAll(staff.from("extraction_runs").select("source_id,chunk_index,chunk_count,status,pipeline_version,model,created_at").eq("pipeline_version",PIPELINE).eq("model",MODEL));
     assertDb(sources); assertDb(runs);
     const incomplete=(sources.data??[]).filter(s=>s.text_available && pendingChunks(s.text?.length??0,(runs.data??[]).filter(r=>r.source_id===s.id)).length);
-    if(!data.diagnostic && (sources.data?.length!==87 || incomplete.length)) throw new Error(`Submission blocked: ${incomplete.length} sources have unfinished extraction. Use diagnostic export while completing review.`);
+    if(!data.diagnostic && data.kind!=="changes" && (sources.data?.length!==87 || incomplete.length)) throw new Error(`Submission blocked: ${incomplete.length} sources have unfinished extraction. Use diagnostic export while completing review.`);
     const tests = await runTests(inp);
-    if(!data.diagnostic && tests.some(t=>t.status!=="evaluated" || t.per_rule.some(p=>!("check" in p) || (p.check as {status:string}).status!=="passed"))) throw new Error("Submission blocked: change-case mappings or specification checks are incomplete, unresolved or failed");
+    if(!data.diagnostic && data.kind==="changes" && tests.some(t=>t.status!=="evaluated" || t.per_rule.some(p=>!("check" in p) || (p.check as {status:string}).status!=="passed"))) throw new Error("Submission blocked: change-case mappings or specification checks are incomplete, unresolved or failed");
     const finishExport = async (artifact: Json) => {
       const capturedAt = new Date().toISOString();
       const snapshot = {dataset_id:inp.dataset!.id,upload_sha256:inp.dataset!.upload_sha256,as_of:DEFAULT_AS_OF,

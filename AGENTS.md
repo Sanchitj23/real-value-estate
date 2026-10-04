@@ -17,3 +17,4 @@
 - Long jobs are client-driven loops over bounded server calls (one text chunk / ten addresses) that skip finished work — resumable within Worker limits.
 - Extracted quotes must match stored source text (exact or whitespace-collapsed, offsets into stored text) or the rule is marked invalid.
 - Public surface is only the landing (/) and /auth; all workspaces live under src/routes/_authenticated/ with a sidebar dashboard layout — app is sign-in first.
+- Imports require 500 properties and 87 references with at least the 54 baseline texts; supplemental texts arrive as a new dataset version — history stays immutable.

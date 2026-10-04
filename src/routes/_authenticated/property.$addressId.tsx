@@ -87,7 +87,7 @@ function PropertyReport() {
         const outs = r.outcomes.filter((o) => o.category === cat && o.result);
         return (
           <section key={cat}>
-            <h2 className="mb-2 flex items-center gap-3 text-2xl">{CATEGORY_LABEL[cat]} <Status value={r.summary.categories[cat]} /></h2>
+            <h2 className="mb-2 flex items-center gap-3 text-2xl">{CATEGORY_LABEL[cat]} {(r.summary.category_results?.[cat] ?? []).map((x: string) => <Status key={x} value={x} />)}</h2>
             {outs.length === 0 ? (
               <p className="text-sm text-muted-foreground">Coverage not established from the supplied, extracted sources.</p>
             ) : (
@@ -97,7 +97,7 @@ function PropertyReport() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Status value={o.result} />
                       <Status value={o.lifecycle} />
-                      <Status value={o.review_state} />
+                      <Status value={o.review_state} kind="review" />
                       {o.conflict_flag && <Status value="conflict" />}
                       <Link to="/rules/$id" params={{ id: o.rule_id }} className="font-serif text-lg text-ink hover:underline">{o.title}</Link>
                     </div>

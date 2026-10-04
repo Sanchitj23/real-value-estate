@@ -44,13 +44,13 @@ function SourcePage() {
     queryFn: async () => getData(await supabase.from("extraction_runs").select("*").eq("source_id", src.data!.id).order("created_at", { ascending: false })) ?? [],
   });
 
-  async function run() {
+  async function run(force = false) {
     if (!src.data) return;
     let chunk = 0;
     try {
       for (;;) {
         setBusy(`Extracting part ${chunk + 1}…`);
-        const r = await extract({ data: { sourceId: src.data.id, chunkIndex: chunk, force:true } });
+        const r = await extract({ data: { sourceId: src.data.id, chunkIndex: chunk, force } });
         toast.success(`Part ${r.chunkIndex + 1}/${r.chunkCount}: ${r.valid} valid, ${r.invalid} invalid`);
         if (r.done) break;
         chunk++;
@@ -106,14 +106,17 @@ function SourcePage() {
             </dl>
           </div>
           {s.text && isStaff && (
-            <Button onClick={run} disabled={!!busy} className="w-full">{busy ?? (runs.data?.length ? "Re-run automated extraction" : "Run automated extraction")}</Button>
+            <div>
+            <Button onClick={() => run(false)} disabled={!!busy} className="w-full">{busy ?? (runs.data?.length ? "Resume unfinished parts" : "Run automated extraction")}</Button>
+            {!!runs.data?.length && <Button variant="outline" onClick={() => { if (confirm("Re-read every part again? This uses AI credits even for finished parts.")) run(true); }} disabled={!!busy} className="mt-2 w-full">Re-extract all parts (uses credits)</Button>}
+            </div>
           )}
           <div className="paper rounded-sm p-4">
             <div className="eyebrow mb-2">Extracted rules ({rules.data?.length ?? 0})</div>
             {(rules.data ?? []).map((r) => (
               <div key={r.id} className="border-b border-border/60 py-1.5">
                 <Link to="/rules/$id" params={{ id: r.id }} className="text-primary hover:underline">{r.title}</Link>
-                <div className="mt-0.5 flex gap-1"><Status value={r.review_state} /><span className="font-mono text-[0.68rem] text-muted-foreground">v{r.version}</span></div>
+                <div className="mt-0.5 flex gap-1"><Status value={r.review_state} kind="review" /><span className="font-mono text-[0.68rem] text-muted-foreground">v{r.version}</span></div>
               </div>
             ))}
           </div>
@@ -121,7 +124,7 @@ function SourcePage() {
             <div className="eyebrow mb-2">Extraction runs</div>
             {(runs.data ?? []).map((r) => (
               <div key={r.id} className="border-b border-border/60 py-1 text-xs">
-                <Status value={r.status === "done" ? "resolved" : r.status} /> part {r.chunk_index + 1}/{r.chunk_count} · {r.valid} valid / {r.invalid} invalid · <span className="font-mono">{r.model}</span>
+                <Status value={r.status} kind="job" /> part {r.chunk_index + 1}/{r.chunk_count} · {r.valid} valid / {r.invalid} invalid · <span className="font-mono">{r.model}</span>
                 <div className="text-muted-foreground">{new Date(r.created_at).toLocaleString()} {r.error && `— ${r.error}`}</div>
               </div>
             ))}

@@ -76,7 +76,7 @@ function RulePage() {
       <PageHeader eyebrow={`${r.rule_key} · version ${r.version}${r.is_current ? "" : " (superseded version)"}`} title={r.title}>
         {r.jurisdiction} · {CATEGORY_LABEL[r.category]} · {r.citation}
       </PageHeader>
-      <div className="flex flex-wrap gap-2"><Status value={r.legal_status} /><Status value={r.review_state} />{r.effective_date && <span className="font-mono text-xs">effective {r.effective_date}</span>}</div>
+      <div className="flex flex-wrap gap-2"><Status value={r.legal_status} /><Status value={r.review_state} kind="review" />{r.effective_date && <span className="font-mono text-xs">effective {r.effective_date}</span>}</div>
       <Disclaimer extra="Legal lifecycle, applicability and review state are independent labels." />
 
       <section className="grid gap-4 md:grid-cols-2">
@@ -105,7 +105,7 @@ function RulePage() {
         {(history.data ?? []).map((h) => (
           <div key={h.id} className="flex flex-wrap items-center gap-2 border-b border-border/60 py-1">
             <Link to="/rules/$id" params={{ id: h.id }} className="font-mono text-primary">v{h.version}</Link>
-            <Status value={h.review_state} />{h.is_current && <span className="text-xs">current</span>}
+            <Status value={h.review_state} kind="review" />{h.is_current && <span className="text-xs">current</span>}
             <span className="text-xs text-muted-foreground">{new Date(h.created_at).toLocaleString()} — {h.change_reason ?? "automated extraction"}</span>
           </div>
         ))}

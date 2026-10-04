@@ -24,16 +24,28 @@ const STATUS_STYLE: Record<string, string> = {
   ambiguous: "bg-st-unknown-bg text-st-unknown border-st-unknown/30",
   error: "bg-st-conflict-bg text-st-conflict border-st-conflict/30",
   none: "bg-muted text-muted-foreground border-border",
+  captured: "bg-st-applies-bg text-st-applies border-st-applies/30",
+  missing_text: "bg-st-unknown-bg text-st-unknown border-st-unknown/30",
+  evaluated: "bg-st-future-bg text-st-future border-st-future/30",
+  partial: "bg-st-unknown-bg text-st-unknown border-st-unknown/30",
+  incomplete: "bg-muted text-muted-foreground border-border",
+  passed: "bg-st-applies-bg text-st-applies border-st-applies/30",
+  unresolved: "bg-st-unknown-bg text-st-unknown border-st-unknown/30",
+  hypothetical: "bg-st-pending-bg text-st-pending border-st-pending/30",
 };
 const STATUS_LABEL: Record<string, string> = {
   not_yet_effective: "not yet effective", validated_auto: "auto-validated, unreviewed", in_force: "in force", no_match: "no match",
+  missing_text: "text missing", evaluated: "diagnostic run", hypothetical: "hypothetical — not law",
 };
+/** Vocabulary family: legal status of a rule, operational job state, or human review state. */
+export type StatusKind = "legal" | "job" | "review";
+const KIND_PREFIX: Record<StatusKind, string> = { legal: "", job: "job: ", review: "review: " };
 
-export function Status({ value, className }: { value: string | null | undefined; className?: string }) {
+export function Status({ value, className, kind }: { value: string | null | undefined; className?: string; kind?: StatusKind }) {
   const v = value ?? "none";
   return (
     <span className={cn("inline-flex items-center rounded-sm border px-1.5 py-0.5 font-mono text-[0.68rem] uppercase tracking-wider whitespace-nowrap", STATUS_STYLE[v] ?? STATUS_STYLE["none"], className)}>
-      {value ? STATUS_LABEL[v] ?? v.replace(/_/g, " ") : "—"}
+      {value ? (kind ? KIND_PREFIX[kind] : "") + (STATUS_LABEL[v] ?? v.replace(/_/g, " ")) : "—"}
     </span>
   );
 }
@@ -42,7 +54,7 @@ export function Disclaimer({ asOf = DEFAULT_AS_OF, extra }: { asOf?: string; ext
   return (
     <div className="border-l-2 border-st-unknown bg-st-unknown-bg/60 px-3 py-2 text-xs text-accent-foreground">
       <strong className="font-semibold">{DISCLAIMER}</strong>{" "}
-      As of <span className="font-mono">{asOf}</span>. Results reflect only the supplied source snapshot (54 of 87 references have captured text) and automated extraction that may be unreviewed. {extra}
+      As of <span className="font-mono">{asOf}</span>. Results reflect only the supplied source snapshot (some references have no captured text) and automated extraction that may be unreviewed. {extra}
     </div>
   );
 }

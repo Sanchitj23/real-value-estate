@@ -27,10 +27,10 @@ export const getMonitoring = createServerFn({ method: "POST" })
     if (!roles.includes("admin") && !roles.includes("reviewer")) throw new Error("Staff permission required");
     const s = ctx.supabase;
     const [runs, recentRuns, geo, rules, audit, datasets] = await Promise.all([
-      s.from("extraction_runs").select("status").limit(5000),
-      s.from("extraction_runs").select("id,status,chunk_index,chunk_count,valid,invalid,error,created_at,model,source_documents(doc_id)").order("created_at", { ascending: false }).limit(25),
-      s.from("jurisdiction_resolutions").select("status").eq("is_current", true).limit(5000),
-      s.from("rule_versions").select("review_state").eq("is_current", true).limit(10000),
+      s.from("extraction_runs").select("status,source_documents!inner(dataset_versions!inner(status))").eq("source_documents.dataset_versions.status","active").limit(5000),
+      s.from("extraction_runs").select("id,status,chunk_index,chunk_count,valid,invalid,error,created_at,model,source_documents!inner(doc_id,dataset_versions!inner(status))").eq("source_documents.dataset_versions.status","active").order("created_at", { ascending: false }).limit(25),
+      s.from("jurisdiction_resolutions").select("status,properties!inner(dataset_versions!inner(status))").eq("properties.dataset_versions.status","active").eq("is_current", true).limit(5000),
+      s.from("rule_versions").select("review_state,source_documents!inner(dataset_versions!inner(status))").eq("source_documents.dataset_versions.status","active").eq("is_current", true).limit(10000),
       s.from("audit_log").select("id,actor,action,entity,entity_id,created_at").order("created_at", { ascending: false }).limit(50),
       s.from("dataset_versions").select("id,status,package_name,created_at,upload_sha256").order("created_at", { ascending: false }).limit(10),
     ]);
