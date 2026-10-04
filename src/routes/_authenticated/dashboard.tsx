@@ -65,3 +65,38 @@ function Dashboard() {
     </div>
   );
 }
+
+type Counts = { properties: number; sources: number; captured: number; rules: number; reviewed: number; invalid: number; geocoded: number; resolved: number };
+
+function Readiness({ counts, isStaff }: { counts: Counts | null; isStaff: boolean }) {
+  const steps = [
+    { label: "Dataset imported", ok: !!counts && counts.properties > 0, detail: counts ? `${counts.properties} addresses, ${counts.sources} sources (${counts.captured} with text)` : "No active dataset" },
+    { label: "Rules read from legal texts", ok: !!counts && counts.rules > 0, detail: counts ? `${counts.rules} rules${counts.invalid ? `, ${counts.invalid} rejected` : ""}` : "—" },
+    { label: "Addresses placed in cities", ok: !!counts && counts.properties > 0 && counts.geocoded >= counts.properties, detail: counts ? `${counts.geocoded} of ${counts.properties} checked, ${counts.resolved} placed` : "—" },
+    { label: "Rules reviewed by a person", ok: !!counts && counts.reviewed > 0, detail: counts ? `${counts.reviewed} reviewed` : "—" },
+  ];
+  const next = steps.find((s) => !s.ok);
+  return (
+    <div className="rounded-md border border-border bg-card p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="font-medium">System readiness</div>
+        <span className={next ? "text-sm text-st-unknown" : "text-sm text-primary"}>{next ? "Preparing" : "Ready"}</span>
+      </div>
+      <ol className="space-y-2 text-sm">
+        {steps.map((s) => (
+          <li key={s.label} className="flex items-start gap-2">
+            <span className={s.ok ? "text-primary" : "text-muted-foreground"}>{s.ok ? "✓" : "○"}</span>
+            <span className="flex-1">{s.label}<span className="block text-xs text-muted-foreground">{s.detail}</span></span>
+          </li>
+        ))}
+      </ol>
+      {next && (
+        <p className="mt-4 text-sm">
+          {isStaff
+            ? <>Next step: <Link to="/admin" className="font-medium underline">{next.label.toLowerCase()} on Data &amp; jobs</Link></>
+            : "The legal data is still being prepared. Results may show as unknown until preparation finishes."}
+        </p>
+      )}
+    </div>
+  );
+}
