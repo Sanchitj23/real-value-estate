@@ -1,10 +1,11 @@
+import { useAsOf } from "@/hooks/useAsOf";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { queryOptions, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { getPropertyReport } from "@/lib/engine.functions";
 import { CATEGORIES, CATEGORY_LABEL, DEFAULT_AS_OF, factLabelOf } from "@/lib/engine/applicability";
 import { Disclaimer, PageHeader, Status, download } from "@/components/app/ui";
 import { Input } from "@/components/ui/input";
+import { FACTS, type FactKey } from "@/lib/engine/expr";
 import { Button } from "@/components/ui/button";
 
 const reportQ = (addressId: string, asOf: string) =>
@@ -33,8 +34,9 @@ export const Route = createFileRoute("/_authenticated/property/$addressId")({
 
 function PropertyReport() {
   const { addressId } = Route.useParams();
-  const [asOf, setAsOf] = useState(DEFAULT_AS_OF);
-  const { data: r, isFetching } = useQuery({ ...reportQ(addressId, asOf), placeholderData: (p) => p });
+  const [asOf, setAsOf] = useAsOf();
+  const { data: r, isFetching, error } = useQuery({ ...reportQ(addressId, asOf),  });
+  if(error) return <p role="alert">{error.message}</p>;
   if (!r) return <p>Loading…</p>;
   const p = r.property;
   const allMissing = Array.from(new Set(r.outcomes.flatMap((o) => o.missing)));
@@ -71,7 +73,7 @@ function PropertyReport() {
         <div className="paper rounded-sm p-4 text-sm md:col-span-2">
           <div className="eyebrow mb-2">What must be established before acting ({allMissing.length})</div>
           {allMissing.length ? (
-            <ul className="grid gap-1 sm:grid-cols-2">{allMissing.map((m) => <li key={m}>• {factLabelOf(m)}</li>)}</ul>
+            <ul className="grid gap-1 sm:grid-cols-2">{allMissing.map((m) => <li key={m}>• {factLabelOf(m)}{FACTS[m as FactKey]?.question && <p className="text-xs text-muted-foreground">{FACTS[m as FactKey].question}</p>}</li>)}</ul>
           ) : <p className="text-muted-foreground">No missing facts on the evaluated rules.</p>}
           <p className="mt-2 text-xs text-muted-foreground">Missing facts are treated as unknown, never false. Year built is not a certificate-of-occupancy date.</p>
         </div>
@@ -100,6 +102,9 @@ function PropertyReport() {
                     <div className="mt-1 text-xs text-muted-foreground">{o.jurisdiction} · {o.citation}{o.key_value ? ` · ${o.key_value}` : ""}</div>
                     <p className="mt-2 text-sm">{o.requirement}</p>
                     <p className="mt-2 text-sm text-muted-foreground"><strong className="text-foreground">Why: </strong>{o.explanation}</p>
+                    {o.trace.length > 0 && <details className="mt-2 text-xs"><summary className="cursor-pointer">Show condition evaluation</summary><ul>{o.trace.map((t,i)=><li key={i}>{t.label}: {String(t.result)}</li>)}</ul></details>}
+                    <p className="mt-1 text-xs text-muted-foreground">Source retrieved: {o.retrieved_at ?? "not supplied"}</p>
+                    {o.source_url && <a href={o.source_url} target="_blank" rel="noopener noreferrer" className="text-xs underline">Official source</a>}
                     {o.conflict_note && <p className="mt-1 text-sm text-st-conflict">{o.conflict_note}</p>}
                     <blockquote className="mt-3 border-l-2 border-primary bg-muted/60 px-3 py-2 source-text">“{o.quoted_span}”</blockquote>
                     {o.source_doc_id && <Link to="/sources/$docId" params={{ docId: o.source_doc_id }} className="mt-1 inline-block text-xs text-primary underline">Source {o.source_doc_id}</Link>}

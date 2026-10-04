@@ -24,3 +24,6 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+# Deployment of the corrected data and legal engine
+
+See [LOVABLE_DEPLOYMENT.md](./LOVABLE_DEPLOYMENT.md) for the migration, bundled dataset import, verification and Lovable publish steps. Apply migration `0002_evidence_integrity.sql` before publishing this update. Git sync, database migration and updating the live site are separate steps.

@@ -1,3 +1,4 @@
+import { assertDb } from "./db-result";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
@@ -6,7 +7,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 type Ctx = { supabase: any; userId: string };
 
 async function rolesOf(ctx: Ctx): Promise<string[]> {
-  const { data } = await ctx.supabase.from("user_roles").select("role").eq("user_id", ctx.userId);
+  const result = await ctx.supabase.from("user_roles").select("role").eq("user_id", ctx.userId);
+  assertDb(result); const data=result.data;
   return (data ?? []).map((r: { role: string }) => r.role);
 }
 
@@ -32,6 +34,7 @@ export const getMonitoring = createServerFn({ method: "POST" })
       s.from("audit_log").select("id,actor,action,entity,entity_id,created_at").order("created_at", { ascending: false }).limit(50),
       s.from("dataset_versions").select("id,status,package_name,created_at,upload_sha256").order("created_at", { ascending: false }).limit(10),
     ]);
+    for (const result of [runs,recentRuns,geo,rules,audit,datasets]) assertDb(result);
     const errors = (recentRuns.data ?? []).filter((r: { status: string }) => r.status === "error").length;
     return {
       extraction: tally(runs.data, "status"),
@@ -53,7 +56,8 @@ export const listUsers = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin.auth.admin.listUsers({ perPage: 500 });
     if (error) throw new Error(error.message);
-    const { data: roleRows } = await supabaseAdmin.from("user_roles").select("user_id,role");
+    const roleResult = await supabaseAdmin.from("user_roles").select("user_id,role");
+    assertDb(roleResult); const roleRows=roleResult.data;
     const byUser = new Map<string, string[]>();
     for (const r of roleRows ?? []) byUser.set(r.user_id, [...(byUser.get(r.user_id) ?? []), r.role]);
     return data.users.map((u) => ({
@@ -75,6 +79,6 @@ export const setUserRole = createServerFn({ method: "POST" })
       : ctx.supabase.from("user_roles").delete().eq("user_id", data.userId).eq("role", data.role);
     const { error } = await q;
     if (error) throw new Error(error.message);
-    await ctx.supabase.from("audit_log").insert({ actor: ctx.userId, action: data.grant ? "role.grant" : "role.revoke", entity: "user_roles", entity_id: data.userId, detail: { role: data.role } });
+    assertDb(await ctx.supabase.from("audit_log").insert({ actor: ctx.userId, action: data.grant ? "role.grant" : "role.revoke", entity: "user_roles", entity_id: data.userId, detail: { role: data.role } }));
     return { ok: true };
   });

@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { importStart, importProperties, importSources, importFinish, extractSource, geocodeBatch } from "@/lib/admin.functions";
+import { importStart, importProperties, importSources, importFinish, extractSource, geocodeBatch, getExtractionPlan } from "@/lib/admin.functions";
 import { exportSubmission, getOverview } from "@/lib/engine.functions";
 import { Disclaimer, PageHeader, Stat, download } from "@/components/app/ui";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,10 @@ function Admin() {
   const qc = useQueryClient();
   const overview = useQuery({ queryKey: ["overview"], queryFn: () => getOverview() });
   const fStart = useServerFn(importStart), fProps = useServerFn(importProperties), fSrc = useServerFn(importSources), fFinish = useServerFn(importFinish);
+  const fPlan = useServerFn(getExtractionPlan);
   const fExtract = useServerFn(extractSource), fGeo = useServerFn(geocodeBatch), fExport = useServerFn(exportSubmission);
+  const [busy,setBusy] = useState(false);
+  const runJob = async (action:()=>Promise<void>) => { if(busy) return; setBusy(true); try{await action()}catch(e){toast.error((e as Error).message)}finally{setBusy(false)} };
   const [job, setJob] = useState<{ label: string; done: number; total: number; log: string[] } | null>(null);
   const [stop, setStop] = useState(false);
   const stopRef = useRef(false);
@@ -53,7 +56,8 @@ function Admin() {
       if (!String(d.format_version ?? "").startsWith("housing-law-bootstrap/")) throw new Error("Unknown format_version");
       if (ids.size !== props.length || docs.size !== sources.length) throw new Error("Duplicate IDs in file");
       const captured = sources.filter((s: { supplied_text_available: boolean; text: string | null }) => s.supplied_text_available && s.text).length;
-      const expected = { properties: props.length, sources: sources.length, captured };
+      if(props.length!==500 || sources.length!==87 || captured!==54) throw new Error("Expected 500 properties, 87 sources and 54 captured texts");
+      const expected = { properties: 500 as const, sources: 87 as const, captured: 54 as const };
       const linkOnly = new Map((d.links_only_rows ?? []).map((r: any) => [r.doc_id, r]));
       log("Starting import", 0, 3, `File SHA256 ${hash.slice(0, 16)}… · ${props.length} properties · ${sources.length} sources · ${captured} texts`);
       const start = await fStart({ data: { upload_sha256: hash, format_version: d.format_version, package_metadata: d.package_metadata ?? {}, known_gaps: d.known_gaps ?? [], change_tests: d.change_tests ?? [], rule_record_schema: d.rule_record_schema ?? {}, counts: expected } });
@@ -75,19 +79,16 @@ function Admin() {
 
   async function bulkExtract() {
     setStop(false); stopRef.current = false;
-    const { data: srcs } = await supabase.from("source_documents").select("id,doc_id,dataset_versions!inner(status)").eq("dataset_versions.status", "active").eq("text_available", true).order("doc_id");
-    const { data: runs } = await supabase.from("extraction_runs").select("source_id").eq("status", "done");
-    const doneSet = new Set((runs ?? []).map((r) => r.source_id));
-    const todo = (srcs ?? []).filter((s) => !doneSet.has(s.id));
+    const todo = (await fPlan()).filter(s=>s.chunks.length>0);
     let i = 0;
     for (const s of todo) {
       if (stopRef.current) break;
-      let chunk = 0;
       try {
-        for (;;) {
+        for (const chunk of s.chunks) {
+          if(stopRef.current) break;
           const r = await fExtract({ data: { sourceId: s.id, chunkIndex: chunk } });
           log("Extracting", i, todo.length, `${s.doc_id} part ${r.chunkIndex + 1}/${r.chunkCount}: ${r.valid} valid, ${r.invalid} invalid`);
-          if (r.done) break; chunk++;
+
         }
       } catch (e) {
         log("Extracting", i, todo.length, `${s.doc_id}: ${(e as Error).message}`);
@@ -95,14 +96,14 @@ function Admin() {
       }
       i++; log("Extracting", i, todo.length);
     }
-    log("Extraction finished (resumable — skips sources already done)", i, Math.max(todo.length, 1));
+    log("Extraction stopped/finished (resumes every unfinished part)", i, Math.max(todo.length, 1));
     qc.invalidateQueries();
   }
 
   async function bulkGeocode() {
     stopRef.current = false;
     const { data: props } = await supabase.from("properties").select("id,dataset_versions!inner(status)").eq("dataset_versions.status", "active").limit(2000);
-    const { data: res } = await supabase.from("jurisdiction_resolutions").select("property_id").eq("is_current", true).in("status", ["resolved", "no_match", "ambiguous"]).limit(5000);
+    const { data: res } = await supabase.from("jurisdiction_resolutions").select("property_id").eq("is_current", true).eq("status", "resolved").limit(5000);
     const have = new Set((res ?? []).map((r) => r.property_id));
     const todo = (props ?? []).filter((p) => !have.has(p.id)).map((p) => p.id);
     for (let i = 0; i < todo.length; i += 10) {
@@ -124,9 +125,10 @@ function Admin() {
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Admin · jobs" title="Import, extract, resolve, export">
-        Jobs run in bounded steps (one document part or ten addresses per call), skip finished work, and can be resumed.
+        Jobs run while this tab stays open, in bounded steps (one document part or ten addresses per call). Completed parts are persisted; reopening this page lets you resume unfinished parts. AI extraction uses workspace credits.
       </PageHeader>
       <Disclaimer />
+      {overview.error && <p role="alert" className="text-st-conflict">{overview.error.message}</p>}
       {c && <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Properties" value={c.properties} /><Stat label="Sources / texts" value={`${c.sources} / ${c.captured}`} />
         <Stat label="Current rules" value={c.rules} hint={`${c.invalid} invalid`} /><Stat label="Resolved" value={`${c.resolved}/${c.geocoded}`} hint="resolved / attempted" />
@@ -135,7 +137,7 @@ function Admin() {
       <section className="paper space-y-3 rounded-sm p-5">
         <h2 className="text-2xl">1 · Import dataset</h2>
         <p className="text-sm text-muted-foreground">Upload <span className="font-mono">housing_law_bootstrap.json</span>. Validates format, duplicate IDs and counts; re-importing the identical file is a no-op; a changed file creates a new dataset version.</p>
-        {isAdmin ? <input type="file" accept="application/json" onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} className="text-sm" /> : <p className="text-sm text-st-unknown">Admin role required.</p>}
+        {isAdmin ? <div className="space-y-2"><Button disabled={busy} onClick={()=>runJob(async()=>{try { const r=await fetch("/data/housing_law_bootstrap.json"); if(!r.ok) throw new Error("Bundled dataset unavailable"); await onFile(new File([await r.blob()],"housing_law_bootstrap.json",{type:"application/json"})); }catch(e){toast.error((e as Error).message)}})}>Import supplied hackathon dataset</Button><input type="file" accept="application/json" onChange={(e) => e.target.files?.[0] && runJob(()=>onFile(e.target.files![0]!))} className="text-sm" /></div> : <p className="text-sm text-st-unknown">Admin role required.</p>}
         {overview.data?.dataset && <pre className="source-text max-h-48 overflow-auto bg-muted p-2">{JSON.stringify(overview.data.dataset.receipt, null, 2)}</pre>}
       </section>
 
@@ -143,7 +145,7 @@ function Admin() {
         <h2 className="text-2xl">2 · Automated extraction</h2>
         <p className="text-sm text-muted-foreground">Runs the AI extractor over every captured text not yet processed. Each candidate must pass schema validation and exact quote matching against the stored text. Uses AI credits.</p>
         <div className="flex gap-2">
-          <Button disabled={!isStaff} onClick={bulkExtract}>Extract all pending sources</Button>
+          <Button disabled={!isStaff || busy} onClick={()=>runJob(bulkExtract)}>Extract all pending sources</Button>
           <Button variant="outline" onClick={() => { stopRef.current = true; setStop(true); }}>Stop after current step</Button>
         </div>
       </section>
@@ -151,7 +153,7 @@ function Admin() {
       <section className="paper space-y-3 rounded-sm p-5">
         <h2 className="text-2xl">3 · Jurisdiction resolution</h2>
         <p className="text-sm text-muted-foreground">Queries the public US Census geocoder with street, state and ZIP (not the postal city) and records the incorporated place, county and coordinates with full evidence. No-match and ambiguous results stay unresolved.</p>
-        <Button disabled={!isStaff} onClick={bulkGeocode}>Resolve unresolved addresses</Button>
+        <Button disabled={!isStaff || busy} onClick={()=>runJob(bulkGeocode)}>Resolve unresolved addresses</Button>
       </section>
 
       {job && (
@@ -167,9 +169,10 @@ function Admin() {
         <p className="text-sm text-muted-foreground">Organizer-shaped files generated from the same engine. No judge score is computed — no scoring script or answer key was supplied.</p>
         <div className="flex flex-wrap gap-2">
           {(["rules", "lookups", "changes"] as const).map((k) => (
-            <Button key={k} variant="outline" onClick={async () => { try { download(`${k}.json`, await fExport({ data: { kind: k } })); } catch (e) { toast.error((e as Error).message); } }}>{k}.json</Button>
+            <Button disabled={!isStaff || busy} key={k} variant="outline" onClick={async () => { try { const result=await fExport({ data: { kind: k, diagnostic: false } }); download(`${k}.json`,result.artifact); download(`${k}-receipt.json`,result.receipt); } catch (e) { toast.error((e as Error).message); } }}>{k}.json</Button>
           ))}
         </div>
+        <Button disabled={!isStaff || busy} variant="outline" onClick={async()=>{try { for(const kind of ["rules","lookups","changes"] as const) {const result=await fExport({data:{kind,diagnostic:true}}); download(`diagnostic-${kind}.json`,result.artifact); download(`diagnostic-${kind}-receipt.json`,result.receipt);} }catch(e){toast.error((e as Error).message)}}}>Download diagnostic exports (not a verified submission)</Button>
       </section>
     </div>
   );

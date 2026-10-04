@@ -1,3 +1,4 @@
+import { useAsOf } from "@/hooks/useAsOf";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -23,9 +24,10 @@ const COLOR: Record<string, string> = {
 };
 
 function MapPage() {
+  const [asOf, setAsOf] = useAsOf();
   const [cat, setCat] = useState<string>("algorithmic_rent_setting");
   const [state, setState] = useState("CA");
-  const { data } = useQuery({ queryKey: ["portfolio", DEFAULT_AS_OF], queryFn: () => getPortfolio({ data: { asOf: DEFAULT_AS_OF } }) });
+  const { data, error } = useQuery({ queryKey: ["portfolio", asOf], queryFn: () => getPortfolio({ data: { asOf } }) });
   const rows = (data?.rows ?? []).filter((r) => r.property.state === state);
   const pts = rows.filter((r) => r.resolution?.status === "resolved" && r.resolution.lat != null && r.resolution.lon != null);
   const unmapped = rows.length - pts.length;
@@ -39,11 +41,13 @@ function MapPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Reviewer · sample map" title="Where a category applies in the sample">
-        Points are plotted only from validated geocoder coordinates. No invented pins; unmapped properties are counted and listed in the table fallback. This is not citywide coverage.
+      <PageHeader eyebrow="Reviewer · sample map" title="Sample geography and legal outcomes">
+        This coordinate plot is not a geographic basemap. Points are plotted only from accepted geocoder matches. No invented pins; unmapped properties are counted and listed in the table fallback. This is not citywide coverage.
       </PageHeader>
-      <Disclaimer />
+      <Disclaimer asOf={asOf} />
+      {error && <p role="alert">{error.message}</p>}
       <div className="flex flex-wrap gap-3">
+        <label>As of <input aria-label="As-of date" className="border p-1" type="date" value={asOf} onChange={e=>setAsOf(e.target.value)}/></label>
         <select className="h-9 rounded-sm border border-input bg-card px-2 text-sm" value={state} onChange={(e) => setState(e.target.value)}>{["CA", "NJ", "MA"].map((s) => <option key={s}>{s}</option>)}</select>
         <select className="h-9 rounded-sm border border-input bg-card px-2 text-sm" value={cat} onChange={(e) => setCat(e.target.value)}>{CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}</select>
         <div className="flex flex-wrap items-center gap-2 text-xs">{Object.keys(COLOR).map((k) => <Status key={k} value={k === "none" ? null : k} />)}</div>
@@ -72,6 +76,7 @@ function MapPage() {
           {Object.keys(COLOR).map((k) => <div key={k} className="flex justify-between"><span>{k.replace(/_/g, " ")}</span><span className="font-mono">{rows.filter((r) => (r.categories[cat] ?? "none") === k).length}</span></div>)}
         </aside>
       </div>
+      <section className="paper max-h-80 overflow-auto rounded-sm p-4"><h2 className="text-xl">All sample properties in this view</h2><table className="w-full text-sm"><thead><tr><th>Property</th><th>Legal place</th><th>Geography status</th><th>Selected category</th></tr></thead><tbody>{rows.map(r=><tr key={r.property.id} className="border-b"><td className="p-2"><Link to="/property/$addressId" params={{addressId:r.property.address_id}}>{r.property.street_address}</Link></td><td>{r.resolution?.place_name ?? "Unknown"}</td><td>{r.resolution?.status ?? "Unresolved"}</td><td><Status value={r.categories[cat]}/></td></tr>)}</tbody></table></section>
     </div>
   );
 }

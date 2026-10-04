@@ -1,3 +1,4 @@
+import { getData } from "@/lib/db-result";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -24,14 +25,14 @@ function Reviewer() {
   const { isStaff } = useAuth();
   const rules = useQuery({
     queryKey: ["rules-current"],
-    queryFn: async () => (await supabase.from("rule_versions").select("id,rule_key,version,jurisdiction,category,title,legal_status,effective_date,review_state,validation_errors,confidence,source_documents(doc_id)").eq("is_current", true).order("rule_key")).data ?? [],
+    queryFn: async () => getData(await supabase.from("rule_versions").select("id,rule_key,version,jurisdiction,category,title,legal_status,effective_date,review_state,validation_errors,confidence,source_documents!inner(doc_id,dataset_versions!inner(status))").eq("source_documents.dataset_versions.status","active").or("is_current.eq.true,review_state.eq.invalid").order("rule_key")) ?? [],
   });
   const sources = useQuery({
     queryKey: ["sources"],
-    queryFn: async () => (await supabase.from("source_documents").select("id,doc_id,jurisdictions,source_type,capture,text_available,retrieved_at,hash_matches,dataset_versions!inner(status)").eq("dataset_versions.status", "active").order("doc_id")).data ?? [],
+    queryFn: async () => getData(await supabase.from("source_documents").select("id,doc_id,jurisdictions,source_type,capture,text_available,retrieved_at,hash_matches,dataset_versions!inner(status)").eq("dataset_versions.status", "active").order("doc_id")) ?? [],
   });
-  const runs = useQuery({ queryKey: ["run-counts"], queryFn: async () => (await supabase.from("extraction_runs").select("source_id,status,valid,invalid").order("created_at", { ascending: false }).limit(1000)).data ?? [] });
-  const relations = useQuery({ queryKey: ["relations"], queryFn: async () => (await supabase.from("rule_relations").select("*").order("created_at", { ascending: false })).data ?? [] });
+  const runs = useQuery({ enabled:isStaff, queryKey: ["run-counts"], queryFn: async () => getData(await supabase.from("extraction_runs").select("source_id,status,valid,invalid").order("created_at", { ascending: false }).limit(1000)) ?? [] });
+  const relations = useQuery({ queryKey: ["relations"], queryFn: async () => getData(await supabase.from("rule_relations").select("*").order("created_at", { ascending: false })) ?? [] });
   const [f, setF] = useState({ q: "", state: "all", cat: "all" });
 
   const filtered = useMemo(() => (rules.data ?? []).filter((r) =>

@@ -1,3 +1,4 @@
+import { useAsOf } from "@/hooks/useAsOf";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { queryOptions, useQueries, useSuspenseQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -6,7 +7,7 @@ import { CATEGORIES, CATEGORY_LABEL, DEFAULT_AS_OF } from "@/lib/engine/applicab
 import { Disclaimer, PageHeader, Status } from "@/components/app/ui";
 import { Input } from "@/components/ui/input";
 
-const portfolioQ = queryOptions({ queryKey: ["portfolio", DEFAULT_AS_OF], queryFn: () => getPortfolio({ data: { asOf: DEFAULT_AS_OF } }) });
+const portfolioQ = (asOf: string) => queryOptions({ queryKey: ["portfolio", asOf], queryFn: () => getPortfolio({ data: { asOf } }) });
 
 export const Route = createFileRoute("/_authenticated/renter")({
   head: () => ({
@@ -17,20 +18,22 @@ export const Route = createFileRoute("/_authenticated/renter")({
       { property: "og:description", content: "Protections, missing facts and citations by address." },
     ],
   }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(portfolioQ),
+  loader: ({ context }) => context.queryClient.ensureQueryData(portfolioQ(DEFAULT_AS_OF)),
   component: Renter,
 });
 
 function Renter() {
-  const { data } = useSuspenseQuery(portfolioQ);
+  const [asOf, setAsOf] = useAsOf();
+  const { data } = useSuspenseQuery(portfolioQ(asOf));
+  const [limit,setLimit]=useState(40);
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return data.rows.filter((r) => !s || `${r.property.address_id} ${r.property.street_address} ${r.property.postal_city} ${r.property.zip}`.toLowerCase().includes(s)).slice(0, 40);
-  }, [q, data.rows]);
+    return data.rows.filter((r) => !s || `${r.property.address_id} ${r.property.street_address} ${r.property.postal_city} ${r.property.zip}`.toLowerCase().includes(s)).slice(0, limit);
+  }, [q, data.rows,limit]);
   const compare = useQueries({
-    queries: picked.map((id) => ({ queryKey: ["report", id, DEFAULT_AS_OF], queryFn: () => getPropertyReport({ data: { addressId: id, asOf: DEFAULT_AS_OF } }) })),
+    queries: picked.map((id) => ({ queryKey: ["report", id, asOf], queryFn: () => getPropertyReport({ data: { addressId: id, asOf } }) })),
   });
 
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= 3 ? p : [...p, id]));
@@ -40,9 +43,10 @@ function Renter() {
       <PageHeader eyebrow="Workspace I · Renter / prospective occupant" title="What protects me at this address?">
         Search the 500 supplied sample addresses. Results show protection categories, the facts still needed, and the exact source quote behind each rule. Pick up to three to compare legal profiles — this is not a “best property” score.
       </PageHeader>
-      <Disclaimer />
+      <Disclaimer asOf={asOf} />
+      <label>As of <Input type="date" className="w-44" value={asOf} onChange={e=>setAsOf(e.target.value)}/></label>
       {data.ruleCount === 0 && <p className="text-sm text-st-unknown">No rules extracted yet — categories will show as not established until a reviewer runs extraction.</p>}
-      <Input placeholder="Search by street, ZIP, postal city or ID (e.g. A0001)" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xl" />
+      <Input placeholder="Search by street, ZIP, postal city or ID (e.g. A0001)" value={q} onChange={(e) => {setQ(e.target.value);setLimit(40)}} className="max-w-xl" />
       <div className="paper overflow-x-auto rounded-sm">
         <table className="w-full text-sm">
           <thead className="eyebrow border-b border-border text-left"><tr><th className="p-2">Compare</th><th className="p-2">Address</th><th className="p-2">Postal city</th><th className="p-2">Legal city</th>{CATEGORIES.map((c) => <th key={c} className="p-2">{CATEGORY_LABEL[c]}</th>)}</tr></thead>
@@ -60,6 +64,8 @@ function Renter() {
         </table>
       </div>
 
+      {list.length===0 && <p>No matching address in the supplied sample. This does not mean that no law applies.</p>}
+      {list.length===limit && <button className="underline" onClick={()=>setLimit(n=>n+40)}>Show more addresses</button>}
       {picked.length > 0 && (
         <section>
           <h2 className="mb-3 text-2xl">Legal profile comparison</h2>

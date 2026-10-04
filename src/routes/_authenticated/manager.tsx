@@ -1,3 +1,4 @@
+import { useAsOf } from "@/hooks/useAsOf";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -20,12 +21,13 @@ export const Route = createFileRoute("/_authenticated/manager")({
 });
 
 function Manager() {
-  const [asOf, setAsOf] = useState(DEFAULT_AS_OF);
+  const [asOf, setAsOf] = useAsOf();
   const [state, setState] = useState("all");
   const [city, setCity] = useState("all");
-  const { data, isFetching } = useQuery({ queryKey: ["portfolio", asOf], queryFn: () => getPortfolio({ data: { asOf } }), placeholderData: (p) => p });
-  const rows = useMemo(() => (data?.rows ?? []).filter((r) => (state === "all" || r.property.state === state) && (city === "all" || (r.property.postal_city ?? "") === city)), [data, state, city]);
-  const cities = useMemo(() => Array.from(new Set((data?.rows ?? []).filter((r) => state === "all" || r.property.state === state).map((r) => r.property.postal_city ?? ""))).sort(), [data, state]);
+  const { data, isFetching, error } = useQuery({ queryKey: ["portfolio", asOf], queryFn: () => getPortfolio({ data: { asOf } }),  });
+  const rows = useMemo(() => (data?.rows ?? []).filter((r) => (state === "all" || r.property.state === state) && (city === "all" || (r.resolution?.status === "resolved" ? r.resolution.place_name ?? "Unincorporated" : "Unresolved") === city)), [data, state, city]);
+  const cities = useMemo(() => Array.from(new Set((data?.rows ?? []).filter((r) => state === "all" || r.property.state === state).map((r) => r.resolution?.status === "resolved" ? r.resolution.place_name ?? "Unincorporated" : "Unresolved"))).sort(), [data, state]);
+  if(error) return <p role="alert">{error.message}</p>;
   if (!data) return <p>Loading…</p>;
 
   const count = (cat: string, res: string) => rows.filter((r) => r.categories[cat] === res).length;
@@ -33,7 +35,7 @@ function Manager() {
 
   function exportCsv() {
     const head = ["address_id", "street", "postal_city", "state", "units", "legal_place", ...CATEGORIES, "unknown_rules", "conflict"];
-    const lines = rows.map((r) => [r.property.address_id, r.property.street_address, r.property.postal_city, r.property.state, r.property.units ?? "", r.resolution?.place_name ?? "", ...CATEGORIES.map((c) => r.categories[c] ?? ""), r.unknown_count, r.conflict].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","));
+    const lines = rows.map((r) => [r.property.address_id, r.property.street_address, r.property.postal_city, r.property.state, r.property.units ?? "", r.resolution?.place_name ?? "", ...CATEGORIES.map((c) => r.categories[c] ?? ""), r.unknown_count, r.conflict].map((v) => `"${String(v).replace(/^[=+@-]/, "'$&").replace(/"/g, '""')}"`).join(","));
     const blob = new Blob([`# Not legal advice. Prototype using supplied public sources. As of ${asOf}. Sample only.\n` + [head.join(","), ...lines].join("\n")], { type: "text/csv" });
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `portfolio-${asOf}.csv`; a.click();
   }
@@ -49,7 +51,7 @@ function Manager() {
           <select className="h-9 rounded-sm border border-input bg-card px-2 text-sm" value={state} onChange={(e) => { setState(e.target.value); setCity("all"); }}>
             {["all", "CA", "NJ", "MA"].map((s) => <option key={s}>{s}</option>)}
           </select></label>
-        <label><div className="eyebrow mb-1">Postal city</div>
+        <label><div className="eyebrow mb-1">Legal city</div>
           <select className="h-9 rounded-sm border border-input bg-card px-2 text-sm" value={city} onChange={(e) => setCity(e.target.value)}>
             <option value="all">all</option>{cities.map((c) => <option key={c}>{c}</option>)}
           </select></label>

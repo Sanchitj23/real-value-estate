@@ -1,4 +1,5 @@
-import { evaluate, type Expr, type Facts, type TraceNode, FACTS } from "./expr";
+import { evaluate, ExprSchema, type Facts, type TraceNode, FACTS } from "./expr";
+import { validLegalDate } from "./dates";
 
 export const DEFAULT_AS_OF = "2026-10-01";
 export const DISCLAIMER = "Not legal advice. Prototype using supplied public sources.";
@@ -37,10 +38,17 @@ export type RuleLite = {
   source_url: string | null;
   source_doc_id?: string | null;
   legal_status: string;
+  enacted_date?: string | null;
   effective_date: string | null;
   expiry_date: string | null;
   coverage: unknown;
   exemptions: unknown;
+  coverage_status?: string;
+  exemptions_status?: string;
+  coverage_text?: string | null;
+  exemptions_text?: string | null;
+  penalty?: string | null;
+  retrieved_at?: string | null;
   review_state: string;
   quoted_span: string;
   confidence: number | null;
@@ -68,7 +76,7 @@ export type ResolutionLite = {
   lon: number | null;
 } | null;
 
-export type RelationLite = { from_rule_key: string; to_rule_key: string; relation_type: string; note: string | null };
+export type RelationLite = { from_rule_key: string; to_rule_key: string; relation_type: string; note: string | null; effective_from?: string | null; effective_to?: string | null };
 
 export type Lifecycle = "in_force" | "future" | "pending" | "failed" | "repealed" | "unknown";
 export type Applicability = "true" | "false" | "unknown" | "exempt" | "superseded";
@@ -97,6 +105,7 @@ export type RuleOutcome = {
 
 /** Compare possibly partial ISO dates (YYYY, YYYY-MM, YYYY-MM-DD). Returns null if precision prevents a decision. */
 export function cmpDate(a: string, b: string): -1 | 0 | 1 | null {
+  if (!validLegalDate(a) || !validLegalDate(b)) return null;
   const pa = a.split("-"), pb = b.split("-");
   const n = Math.min(pa.length, pb.length);
   for (let i = 0; i < n; i++) {
@@ -107,17 +116,23 @@ export function cmpDate(a: string, b: string): -1 | 0 | 1 | null {
   return pa.length === pb.length ? 0 : null;
 }
 
-export function lifecycleOn(rule: Pick<RuleLite, "legal_status" | "effective_date" | "expiry_date">, asOf: string): Lifecycle {
+export function lifecycleOn(rule: Pick<RuleLite, "legal_status" | "effective_date" | "expiry_date" | "enacted_date">, asOf: string): Lifecycle {
+  if (!validLegalDate(asOf)) return "unknown";
   const s = rule.legal_status;
   if (s === "failed") return "failed";
   if (s === "pending") return "pending";
+  if (rule.enacted_date) {
+    const enacted = cmpDate(rule.enacted_date, asOf);
+    if (enacted === null || enacted > 0) return "unknown";
+  }
   if (rule.expiry_date) {
     const c = cmpDate(rule.expiry_date, asOf);
+    if (c === null) return "unknown";
     if (c !== null && c <= 0) return "repealed";
   }
   if (s === "repealed") return "repealed";
   if (s !== "enacted") return "unknown";
-  if (!rule.effective_date) return "in_force";
+  if (!rule.effective_date) return "unknown";
   const c = cmpDate(rule.effective_date, asOf);
   if (c === null) return "unknown";
   return c > 0 ? "future" : "in_force";
@@ -177,10 +192,17 @@ export function evaluateProperty(
       missing.push("jurisdiction.city");
     } else parts.push(`${where}; the address is within its jurisdiction.`);
 
-    let cov: ReturnType<typeof evaluate> = { result: true, missing: [] };
-    let exm: ReturnType<typeof evaluate> = { result: false, missing: [] };
-    if (rule.coverage) cov = evaluate(rule.coverage as Expr, facts, trace);
-    if (rule.exemptions) exm = evaluate(rule.exemptions as Expr, facts, trace);
+    const scope = (value: unknown, status: string | undefined, confirmed: string, field: string, defaultResult: boolean) => {
+      if (value && status === "conditional") {
+        const parsed = ExprSchema.safeParse(value);
+        if (parsed.success) return evaluate(parsed.data, facts, trace);
+      } else if (value == null && status === confirmed) return { result: defaultResult, missing: [] };
+      const reason = `manual_review:${field} is not established by validated evidence`;
+      trace.push({ label: reason, result: "unknown" });
+      return { result: "unknown" as const, missing: [reason] };
+    };
+    const cov = scope(rule.coverage, rule.coverage_status, "unconditional", "Coverage", true);
+    const exm = scope(rule.exemptions, rule.exemptions_status, "none", "Exemptions", false);
 
     if (lifecycle === "failed" || lifecycle === "repealed") {
       applicability = "false";
@@ -214,6 +236,8 @@ export function evaluateProperty(
   // Documented interactions only.
   const byKey = new Map(base.map((o) => [o.rule_key, o]));
   for (const rel of relations) {
+    if (rel.effective_from && cmpDate(rel.effective_from, asOf) !== -1 && cmpDate(rel.effective_from, asOf) !== 0) continue;
+    if (rel.effective_to && cmpDate(rel.effective_to, asOf) !== 1) continue;
     const a = byKey.get(rel.from_rule_key), b = byKey.get(rel.to_rule_key);
     if (!a || !b) continue;
     if ((rel.relation_type === "replaces" || rel.relation_type === "stricter-local-standard") && a.category === b.category) {
@@ -221,10 +245,13 @@ export function evaluateProperty(
         b.applicability = "superseded"; b.result = "superseded";
         b.explanation += ` Superseded by ${a.title} (${rel.relation_type}).`;
       } else if (a.result && b.result === "applies" && a.result !== "not_yet_effective" && a.result !== "pending") {
+        b.applicability = "unknown"; b.result = "unknown"; b.conflict_flag = true;
+        b.conflict_note = `Which standard governs depends on unresolved coverage of ${a.title}.`;
         b.explanation += ` May be superseded by ${a.title} if its coverage is established.`;
       }
     }
     if (rel.relation_type === "possible-preemption" || rel.relation_type === "unresolved-conflict") {
+      if (!a.result || !b.result) continue;
       for (const [x, y] of [[a, b], [b, a]] as const) {
         x.conflict_flag = true;
         x.conflict_note = `${rel.relation_type} with ${y.title}${rel.note ? ` — ${rel.note}` : ""}. Human review required.`;

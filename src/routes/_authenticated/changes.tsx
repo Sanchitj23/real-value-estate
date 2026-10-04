@@ -1,3 +1,4 @@
+import { getData } from "@/lib/db-result";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -9,6 +10,8 @@ import { createScenario } from "@/lib/admin.functions";
 import { DEFAULT_AS_OF } from "@/lib/engine/applicability";
 import { Disclaimer, PageHeader, Stat, Status } from "@/components/app/ui";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { PatchSchema } from "@/lib/engine/validation";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -27,12 +30,13 @@ export const Route = createFileRoute("/_authenticated/changes")({
 function Changes() {
   const { isStaff } = useAuth();
   const tests = useQuery({ queryKey: ["change-tests"], queryFn: () => runChangeTests() });
-  const scenarios = useQuery({ queryKey: ["scenarios"], queryFn: async () => (await supabase.from("scenarios").select("*").order("created_at", { ascending: false })).data ?? [] });
-  const rules = useQuery({ queryKey: ["rule-keys"], queryFn: async () => (await supabase.from("rule_versions").select("rule_key,title,jurisdiction,category").eq("is_current", true).order("rule_key")).data ?? [] });
+  const scenarios = useQuery({ queryKey: ["scenarios"], queryFn: async () => getData(await supabase.from("scenarios").select("*").order("created_at", { ascending: false })) ?? [] });
+  const rules = useQuery({ queryKey: ["rule-keys"], queryFn: async () => getData(await supabase.from("rule_versions").select("rule_key,title,jurisdiction,category,source_documents!inner(dataset_versions!inner(status))").eq("source_documents.dataset_versions.status","active").eq("is_current", true).order("rule_key")) ?? [] });
   const [sel, setSel] = useState<string | null>(null);
   const scen = useQuery({ enabled: !!sel, queryKey: ["scenario", sel], queryFn: () => runScenario({ data: { scenarioId: sel! } }) });
   const create = useServerFn(createScenario);
   const qc = useQueryClient();
+  const [patchJson,setPatchJson]=useState("{}");
   const [f, setF] = useState({ name: "", rule_key: "", legal_status: "enacted", effective_date: "", as_of: DEFAULT_AS_OF });
 
   return (
@@ -41,6 +45,7 @@ function Changes() {
         The same deterministic evaluator runs on two rule/date snapshots; affected sets cover only the 500 supplied sample properties. “Affected” means a change in reported applicability — not observed harm, violation or rent impact.
       </PageHeader>
       <Disclaimer />
+      {(tests.error || scen.error || scenarios.error) && <p role="alert">{(tests.error ?? scen.error ?? scenarios.error)?.message}</p>}
 
       <section className="space-y-4">
         <h2 className="text-2xl">Supplied change cases (T1–T5)</h2>
@@ -50,7 +55,7 @@ function Changes() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-sm text-primary">{t.test_id}</span>
               <h3 className="font-serif text-xl">{t.title}</h3>
-              <Status value={t.status === "evaluated" ? "resolved" : t.status === "partial" ? "ambiguous" : "none"} />
+              <Status value={t.status === "evaluated" ? "pending" : t.status === "partial" ? "ambiguous" : "none"} />
               <span className="text-xs text-muted-foreground">{t.status}</span>
             </div>
             <p className="mt-1 text-sm text-muted-foreground"><strong>Specification:</strong> {t.expected}</p>
@@ -58,6 +63,7 @@ function Changes() {
             {t.note && <p className="mt-1 text-xs text-st-unknown">{t.note}</p>}
             {t.per_rule.map((p) => (
               <div key={p.challenge_id} className="mt-3">
+                {"check" in p && <p className="mb-2 text-xs">Specification check: <strong>{(p.check as {status:string}).status}</strong> (not an official judge score)</p>}
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
                   <Stat label={`${p.challenge_id} changed`} value={p.summary.definitely_changed} />
                   <Stat label="Potentially" value={p.summary.potentially_affected} />
@@ -88,9 +94,11 @@ function Changes() {
             </select>
             <select className="h-9 rounded-sm border border-input bg-card px-2 text-sm" value={f.legal_status} onChange={(e) => setF({ ...f, legal_status: e.target.value })}>{["enacted", "pending", "failed", "repealed"].map((s) => <option key={s}>{s}</option>)}</select>
             <Input type="date" title="Hypothetical effective date (optional)" value={f.effective_date} onChange={(e) => setF({ ...f, effective_date: e.target.value })} />
+            <label className="md:col-span-2 text-xs">Evaluation date<Input type="date" value={f.as_of} onChange={e=>setF({...f,as_of:e.target.value})}/></label>
+            <label className="md:col-span-4 text-xs">Optional requirement, formula, conditions or exemptions patch (JSON)<Textarea className="font-mono" value={patchJson} onChange={e=>setPatchJson(e.target.value)} placeholder='{"key_value":"5%","requirement":"Hypothetical cap"}'/></label>
             <Button className="md:col-span-6" disabled={!f.name || !f.rule_key} onClick={async () => {
               try {
-                const r = await create({ data: { name: f.name, rule_key: f.rule_key, as_of: f.as_of, patch: { legal_status: f.legal_status as never, effective_date: f.effective_date || null } } });
+                const r = await create({ data: { name: f.name, rule_key: f.rule_key, as_of: f.as_of, patch: PatchSchema.parse({ legal_status: f.legal_status, effective_date: f.effective_date || null, ...JSON.parse(patchJson) }) } });
                 qc.invalidateQueries({ queryKey: ["scenarios"] }); setSel(r.id); toast.success("Scenario created");
               } catch (e) { toast.error((e as Error).message); }
             }}>Create & evaluate scenario</Button>
@@ -111,7 +119,7 @@ function Changes() {
               <Stat label="Sample size" value={scen.data.sample_size} hint="Sample only, not citywide" />
             </div>
             <div className="mt-3 max-h-72 overflow-auto"><table className="w-full text-xs"><tbody>{scen.data.rows.map((x) => (
-              <tr key={x.address_id} className="border-b border-border/50"><td className="p-1 font-mono">{x.address_id}</td><td className="p-1">{x.street}</td><td className="p-1"><Status value={x.before} /></td><td className="p-1">→</td><td className="p-1"><Status value={x.after} /></td><td className="p-1">{x.label.replace(/_/g, " ")}</td></tr>
+              <tr key={x.address_id} className="border-b border-border/50"><td className="p-1 font-mono">{x.address_id}</td><td className="p-1">{x.street}</td><td className="p-1"><Status value={x.before} /></td><td className="p-1">→</td><td className="p-1"><Status value={x.after} /></td><td className="p-1">{x.label.replace(/_/g, " ")}<div className="text-muted-foreground">{x.before_key_value} → {x.after_key_value}</div>{x.before_requirement !== x.after_requirement && <details><summary>Requirement change</summary><p>Before: {x.before_requirement}</p><p>After: {x.after_requirement}</p></details>}</td></tr>
             ))}</tbody></table></div>
           </div>
         )}

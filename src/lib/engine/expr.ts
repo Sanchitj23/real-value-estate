@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validLegalDate } from "./dates";
 
 /**
  * Whitelisted, validated condition language. Three-valued evaluation:
@@ -11,6 +12,7 @@ export const FACTS = {
   "property.use_code": { type: "string", label: "Assessor use code", question: "Assessor land-use code." },
   "property.is_residential": { type: "boolean", label: "Residential use", question: "Is the property used for residential rental housing?" },
   "property.certificate_of_occupancy_year": { type: "number", label: "Certificate-of-occupancy year", question: "When was the first certificate of occupancy issued?" },
+  "property.certificate_of_occupancy_date": { type: "string", label: "Certificate-of-occupancy date", question: "Check the dated certificate with the local building department; construction year is not this date." },
   "property.single_family_or_condo": { type: "boolean", label: "Single-family home or condo", question: "Is the unit a separately alienable single-family home or condominium?" },
   "unit.is_subsidized": { type: "boolean", label: "Government-subsidized unit", question: "Is the unit subsidized or deed-restricted affordable housing?" },
   "tenancy.months_occupied": { type: "number", label: "Months of tenancy", question: "How long has the tenant occupied the unit?" },
@@ -94,13 +96,20 @@ export function evaluate(e: Expr, facts: Facts, trace: TraceNode[] = []): { resu
         return { result: "unknown", missing: [e.fact] };
       }
       let r: Tri = "unknown";
+      const definition = FACTS[e.fact as FactKey];
+      if (definition && typeof v !== definition.type) {
+        trace.push({ label: describe(e), result: "unknown" });
+        return { result: "unknown", missing: [e.fact] };
+      }
       if (e.operator === "in") {
-        r = (e.value as (string | number)[]).some((x) => norm(x) === norm(v));
+        r = e.value.some((x) => typeof x !== typeof v) ? "unknown" : e.value.some((x) => norm(x) === norm(v));
       } else if (e.operator === "eq" || e.operator === "neq") {
-        if (typeof v !== typeof e.value && !(typeof v === "string" || typeof e.value === "string")) r = "unknown";
+        if (typeof v !== typeof e.value) r = "unknown";
         else { const eq = norm(v) === norm(e.value); r = e.operator === "eq" ? eq : !eq; }
       } else {
-        if (typeof v !== "number" || typeof e.value !== "number") r = "unknown";
+        const numeric = typeof v === "number" && typeof e.value === "number";
+        const dates = e.fact.endsWith("_date") && typeof v === "string" && typeof e.value === "string" && v.length === 10 && e.value.length === 10 && validLegalDate(v) && validLegalDate(e.value);
+        if (!numeric && !dates) r = "unknown";
         else r = e.operator === "lt" ? v < e.value : e.operator === "lte" ? v <= e.value : e.operator === "gt" ? v > e.value : v >= e.value;
       }
       trace.push({ label: describe(e), result: r });

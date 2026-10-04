@@ -1,3 +1,4 @@
+import { getData } from "@/lib/db-result";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -30,17 +31,17 @@ function SourcePage() {
 
   const src = useQuery({
     queryKey: ["source", docId],
-    queryFn: async () => (await supabase.from("source_documents").select("*, dataset_versions!inner(status)").eq("doc_id", docId).eq("dataset_versions.status", "active").maybeSingle()).data,
+    queryFn: async () => getData(await supabase.from("source_documents").select("*, dataset_versions!inner(status)").eq("doc_id", docId).eq("dataset_versions.status", "active").maybeSingle()),
   });
   const rules = useQuery({
     enabled: !!src.data,
     queryKey: ["source-rules", src.data?.id],
-    queryFn: async () => (await supabase.from("rule_versions").select("id,title,category,review_state,version,rule_evidence(start_offset,end_offset,valid,field)").eq("source_id", src.data!.id).eq("is_current", true)).data ?? [],
+    queryFn: async () => getData(await supabase.from("rule_versions").select("id,title,category,review_state,version,rule_evidence(start_offset,end_offset,valid,field)").eq("source_id", src.data!.id).eq("is_current", true)) ?? [],
   });
   const runs = useQuery({
-    enabled: !!src.data,
+    enabled: !!src.data && isStaff,
     queryKey: ["source-runs", src.data?.id],
-    queryFn: async () => (await supabase.from("extraction_runs").select("*").eq("source_id", src.data!.id).order("created_at", { ascending: false })).data ?? [],
+    queryFn: async () => getData(await supabase.from("extraction_runs").select("*").eq("source_id", src.data!.id).order("created_at", { ascending: false })) ?? [],
   });
 
   async function run() {
@@ -49,7 +50,7 @@ function SourcePage() {
     try {
       for (;;) {
         setBusy(`Extracting part ${chunk + 1}…`);
-        const r = await extract({ data: { sourceId: src.data.id, chunkIndex: chunk } });
+        const r = await extract({ data: { sourceId: src.data.id, chunkIndex: chunk, force:true } });
         toast.success(`Part ${r.chunkIndex + 1}/${r.chunkCount}: ${r.valid} valid, ${r.invalid} invalid`);
         if (r.done) break;
         chunk++;
