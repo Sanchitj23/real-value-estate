@@ -10,6 +10,7 @@ import { firstOfRange, geocodeAttempts } from "./geocode";
 import { findPreemptionSentence, suggestLinks, type CaseSpec, type LinkRule } from "./case-link";
 import { matchProperties } from "./address-match";
 import { dateDiff, lawChangeItems } from "./changes-view";
+import { findQuote } from "./quote";
 
 const property: PropertyLite = {id:"p",address_id:"A1",street_address:"Synthetic Street",postal_city:"Unverified",state:"CA",zip:null,year_built:1990,units:4,use_code:null,use_description:"Residential apartments"};
 const rule: RuleLite = {id:"r",rule_key:"synthetic",version:1,state:"CA",level:"state",city:null,jurisdiction:"CA",category:"rent_increase_limits",title:"Synthetic example",requirement:"Synthetic requirement",key_value:"5%",citation:"Synthetic section",source_url:null,legal_status:"enacted",effective_date:"2026-01-01",expiry_date:null,coverage:null,exemptions:null,coverage_status:"unconditional",exemptions_status:"none",review_state:"reviewed",quoted_span:"Synthetic quote only; not a real law.",confidence:null};
@@ -159,4 +160,23 @@ describe("law changes view",()=>{
     expect(items[0]?.effective_date).toBe("2027-07-01");expect(items[0]?.date_basis).toBe("clause");
   });
   it("reports what differs between two dates",()=>expect(dateDiff(inp,"2026-10-01","2027-07-02").map(d=>[d.rule_key,d.before,d.after,d.address_ids])).toEqual([["fair","not_yet_effective","applies",["A2"]]]));
+});
+
+describe("quote matching tolerates capture artefacts but not rewording",()=>{
+  const text="No-fault evictions require the payment of\nrelocation assistance\n.\nIt is a violation of the \u201CNew Jersey Antitrust Act,\u201D P.L.1970 \u2014 as amended.";
+  it("matches across a line break before the full stop and keeps the original substring",()=>{
+    const m=findQuote(text,"No-fault evictions require the payment of relocation assistance.");
+    expect(m?.kind).toBe("normalized");expect(text.slice(m!.start,m!.end)).toBe("No-fault evictions require the payment of\nrelocation assistance\n.");
+  });
+  it("treats straight and curly quotes, and plain and long dashes, as the same",()=>expect(findQuote(text,'violation of the "New Jersey Antitrust Act," P.L.1970 - as amended.')?.kind).toBe("normalized"));
+  it("still rejects a changed word",()=>expect(findQuote(text,"No-fault evictions require the payment of relocation benefits.")).toBeNull());
+  it("prefers the stricter match kinds",()=>{expect(findQuote(text,"It is a violation of the")?.kind).toBe("exact");expect(findQuote(text,"the payment of relocation assistance")?.kind).toBe("whitespace");});
+});
+describe("field-level evidence",()=>{
+  const text="Bill H.1234\nStatus:\nChaptered\nSynthetic requirement: rental notices must be written and delivered. The fee may not exceed five dollars.";
+  const base={category:"application_screening_fees",title:"Synthetic",requirement:"Written notice",quoted_span:"Synthetic requirement: rental notices must be written and delivered.",key_value:null,legal_status:"enacted",enacted_date:null,effective_date:null,expiry_date:null,coverage_status:"unknown",exemptions_status:"unknown",coverage_expr_json:null,exemptions_expr_json:null,supporting_quotes:[{field:"legal_status",quote:"Chaptered"}]};
+  it("accepts a short status line as evidence for the status",()=>{const c=validateCandidate(base,text);expect(c.valid).toBe(true);expect(c.legal_status).toBe("enacted");});
+  it("still needs a real passage for the requirement itself",()=>expect(validateCandidate({...base,quoted_span:"Chaptered"},text).valid).toBe(false));
+  it("leaves out a headline value that has no quote, keeping the rule",()=>{const c=validateCandidate({...base,key_value:"$5"},text);expect(c.valid).toBe(true);expect(c.key_value).toBeNull();expect(c.warnings.join(" ")).toContain("key_value");});
+  it("keeps a headline value that is quoted",()=>expect(validateCandidate({...base,key_value:"$5",supporting_quotes:[...base.supporting_quotes,{field:"key_value",quote:"may not exceed five dollars"}]},text).key_value).toBe("$5"));
 });

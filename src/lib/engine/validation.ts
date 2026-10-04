@@ -15,9 +15,11 @@ export const PatchSchema = z.object({
 }).strict();
 
 export type EvidenceQuote = { field: string; quote: string };
+/** The requirement quote must be a real passage; a field-level fact (status line, date, figure) can be a short phrase. */
+const minQuote = (field: string) => (field === "quoted_span" ? 20 : 8);
 export function anchorEvidence(text: string, quotes: EvidenceQuote[]) {
   return quotes.map((e) => {
-    const m = findQuote(text, e.quote);
+    const m = findQuote(text, e.quote, minQuote(e.field));
     return { field: e.field, quote: m ? text.slice(m.start, m.end) : e.quote,
       start_offset: m?.start ?? null, end_offset: m?.end ?? null,
       match_kind: m?.kind ?? "not_found", valid: !!m };
@@ -64,7 +66,10 @@ export function validateCandidate(c: Record<string, unknown>, text: string) {
     return { expr: null, status: "unknown" };
   };
   const coverage = parseScope("coverage", "unconditional"), exemptions = parseScope("exemptions", "none");
-  if (c["key_value"] != null && !supported("key_value")) errors.push("key_value lacks field-specific evidence");
-  return { errors, warnings, evidence, dates, legal_status, coverage: coverage.expr, exemptions: exemptions.expr,
+  // A headline value with no quote of its own is left out rather than shown unsupported. A quote that was supplied
+  // but is not in the text is still an error (handled above).
+  let key_value = c["key_value"] == null ? null : String(c["key_value"]);
+  if (key_value !== null && !supported("key_value")) { warnings.push("key_value: no supporting quote, so the headline value is left out"); key_value = null; }
+  return { errors, warnings, evidence, dates, legal_status, key_value, coverage: coverage.expr, exemptions: exemptions.expr,
     coverage_status: coverage.status, exemptions_status: exemptions.status, valid: errors.length === 0 };
 }

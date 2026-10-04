@@ -170,8 +170,9 @@ export const getExtractionPlan = createServerFn({ method: "POST" })
 
 /**
  * After every part of a source has been read with the current instructions, retires the automatic rules that an
- * older reading left behind for that source. Rules a person reviewed are kept, and nothing is retired unless the
- * new reading produced at least one valid rule. Retiring is an ordinary "invalid" version, so history stays intact.
+ * older reading left behind for that source. Rules a person reviewed are kept. Nothing is retired unless the new
+ * reading produced at least one valid rule, or read every part and proposed no rule at all. Retiring is an ordinary
+ * "invalid" version, so history stays intact.
  */
 export const finishSource = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -182,7 +183,7 @@ export const finishSource = createServerFn({ method: "POST" })
     const sb = ctx.supabase;
     const src = await sb.from("source_documents").select("id,doc_id,text").eq("id", data.sourceId).single();
     assertDb(src);
-    const runs = await readAll<Any>(sb.from("extraction_runs").select("source_id,chunk_index,chunk_count,status,pipeline_version,model,created_at").eq("source_id", data.sourceId));
+    const runs = await readAll<Any>(sb.from("extraction_runs").select("source_id,chunk_index,chunk_count,status,pipeline_version,model,created_at,candidates").eq("source_id", data.sourceId));
     assertDb(runs);
     if (!src.data?.text || pendingChunks(src.data.text.length, runs.data ?? []).length) return { complete: false, retired: 0 };
     const current = await sb.from("rule_versions").select("*, rule_evidence(field,quote,start_offset,end_offset,match_kind,valid), extraction_runs(pipeline_version)").eq("source_id", data.sourceId).eq("is_current", true);
@@ -190,7 +191,12 @@ export const finishSource = createServerFn({ method: "POST" })
     const rows = (current.data ?? []) as Any[];
     const fresh = rows.filter((r) => r.extraction_runs?.pipeline_version === PIPELINE);
     const stale = rows.filter((r) => r.run_id && r.extraction_runs && r.extraction_runs.pipeline_version !== PIPELINE && r.review_state === "validated_auto");
-    if (!fresh.length || !stale.length) return { complete: true, retired: 0 };
+    // "Found nothing" means every part was read and the reader proposed no rule at all. Candidates that were proposed
+    // but rejected do not count: then the older rules stay until a valid replacement exists.
+    const latest = new Map<number, Any>();
+    for (const r of (runs.data ?? []) as Any[]) if (r.pipeline_version === PIPELINE) { const prev = latest.get(r.chunk_index); if (!prev || (r.created_at ?? "") >= (prev.created_at ?? "")) latest.set(r.chunk_index, r); }
+    const foundNothing = latest.size > 0 && Array.from(latest.values()).every((r) => r.status === "done" && (r.candidates ?? 0) === 0);
+    if (!stale.length || (!fresh.length && !foundNothing)) return { complete: true, retired: 0 };
     let retired = 0;
     for (const row of stale) {
       const { id, created_at: _created, rule_evidence, extraction_runs: _run, ...rest } = row;
@@ -332,6 +338,32 @@ CONDITION TREES
 - A certificate of occupancy is not a construction year: use property.certificate_of_occupancy_date or _year when the law refers to certificates of occupancy, and property.year_built only when the law itself refers to the year of construction.
 - Building unit count (property.units) is different from the owner's portfolio size (ownership.portfolio_units).`;
 
+type ReaderSource = { id: string; doc_id: string; jurisdictions: string | null; url: string | null };
+
+/** One reader candidate checked against the source text and shaped as a rule version. Jurisdiction comes from the manifest, not the model. */
+function candidateRecord(source: ReaderSource, runId: string, c: Any, text: string) {
+  const j = (source.jurisdictions ?? "").trim();
+  const isCity = j.includes(",");
+  const state = isCity ? (j.split(",")[1] ?? "").trim() : j;
+  const city = isCity ? (j.split(",")[0] ?? "").trim() : null;
+  const checked = validateCandidate(c, text);
+  const title = String(c.title ?? "Untitled").slice(0, 200);
+  const category = CATEGORIES.includes(c.category as never) ? String(c.category) : "rent_increase_limits";
+  const payload = {
+    rule_key: `${source.doc_id}:${category}:${slug(title)}`, run_id: runId, source_id: source.id,
+    state, level: isCity ? "city" : "state", city, jurisdiction: isCity ? `${city}, ${state}` : state,
+    category, title, requirement: String(c.requirement ?? ""), key_value: checked.key_value,
+    citation: String(c.citation ?? source.doc_id), source_url: source.url,
+    legal_status: checked.legal_status, ...checked.dates,
+    coverage: checked.coverage, exemptions: checked.exemptions,
+    coverage_status: checked.coverage_status, exemptions_status: checked.exemptions_status,
+    coverage_text: c.coverage_text ?? null, exemptions_text: c.exemptions_text ?? null, interaction_text: c.interaction_text ?? null,
+    quoted_span: checked.evidence[0]?.quote ?? "", confidence: typeof c.confidence === "number" ? Math.max(0, Math.min(1, c.confidence)) : null,
+    review_state: checked.valid ? "validated_auto" : "invalid", validation_errors: [...checked.errors, ...checked.warnings], change_reason: "Automated extraction with field evidence checks",
+  };
+  return { checked, payload };
+}
+
 export const extractSource = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ sourceId: z.string().uuid(), chunkIndex: z.number().int().min(0).default(0), force: z.boolean().default(false) }).parse(d))
@@ -361,11 +393,7 @@ export const extractSource = createServerFn({ method: "POST" })
     assertDb({error:runError});
     const runId = (run as Any).id as string;
 
-    // Jurisdiction comes from the manifest, not the model.
     const j = (source.jurisdictions ?? "").trim();
-    const isCity = j.includes(",");
-    const state = isCity ? (j.split(",")[1] ?? "").trim() : j;
-    const city = isCity ? (j.split(",")[0] ?? "").trim() : null;
 
     let candidates: Any[] = [];
     try {
@@ -380,21 +408,7 @@ export const extractSource = createServerFn({ method: "POST" })
     let valid = 0, invalid = 0;
     try {
       for (const c of candidates) {
-        const checked = validateCandidate(c, text);
-        const title = String(c.title ?? "Untitled").slice(0,200);
-        const category = CATEGORIES.includes(c.category as never) ? String(c.category) : "rent_increase_limits";
-        const payload = {
-          rule_key: `${source.doc_id}:${category}:${slug(title)}`, run_id:runId, source_id:source.id,
-          state,level:isCity?"city":"state",city,jurisdiction:isCity?`${city}, ${state}`:state,
-          category,title,requirement:String(c.requirement ?? ""),key_value:c.key_value ?? null,
-          citation:String(c.citation ?? source.doc_id),source_url:source.url,
-          legal_status:checked.legal_status,...checked.dates,
-          coverage:checked.coverage,exemptions:checked.exemptions,
-          coverage_status:checked.coverage_status,exemptions_status:checked.exemptions_status,
-          coverage_text:c.coverage_text ?? null,exemptions_text:c.exemptions_text ?? null,interaction_text:c.interaction_text ?? null,
-          quoted_span:checked.evidence[0]?.quote ?? "",confidence:typeof c.confidence === "number"?Math.max(0,Math.min(1,c.confidence)):null,
-          review_state:checked.valid?"validated_auto":"invalid",validation_errors:[...checked.errors,...checked.warnings],change_reason:"Automated extraction with field evidence checks",
-        };
+        const { checked, payload } = candidateRecord(source, runId, c, text);
         assertDb(await sb.rpc("publish_rule_version",{p_rule:payload,p_evidence:checked.evidence}));
         if(checked.valid) valid++; else invalid++;
       }
@@ -405,6 +419,56 @@ export const extractSource = createServerFn({ method: "POST" })
     }
     await audit(ctx, "extract.run", "source_documents", source.doc_id, { runId, chunk: data.chunkIndex, valid, invalid });
     return { runId, chunkIndex: data.chunkIndex, chunkCount: n, candidates: candidates.length, valid, invalid, done: data.chunkIndex + 1 >= n };
+  });
+
+/** Reader runs of the current instructions that still have rejected candidates. */
+export const listRecheckRuns = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const ctx = context as unknown as Ctx;
+    await requireStaff(ctx);
+    const runs = await readAll<Any>(ctx.supabase.from("extraction_runs").select("id,invalid,created_at,source_documents!inner(doc_id,dataset_versions!inner(status))").eq("source_documents.dataset_versions.status", "active").eq("pipeline_version", PIPELINE).eq("status", "done").gt("invalid", 0).order("created_at"));
+    assertDb(runs);
+    return ((runs.data ?? []) as Any[]).map((r) => ({ id: r.id as string, doc_id: r.source_documents.doc_id as string, invalid: r.invalid as number }));
+  });
+
+/**
+ * Checks one run's rejected candidates again against the source text, using the stored reader output: no AI call.
+ * A candidate that now passes becomes the current rule; a rule a person reviewed is never displaced.
+ */
+export const recheckRun = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ runId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    await requireStaff(ctx);
+    const sb = ctx.supabase;
+    const found = await sb.from("extraction_runs").select("id,source_id,pipeline_version,status,valid,invalid,raw_output").eq("id", data.runId).single();
+    assertDb(found);
+    const run = found.data as Any;
+    if (run.pipeline_version !== PIPELINE || run.status !== "done") return { recovered: 0 };
+    const src = await sb.from("source_documents").select("id,doc_id,jurisdictions,url,text").eq("id", run.source_id).single();
+    assertDb(src);
+    const source = src.data as ReaderSource & { text: string | null };
+    if (!source.text) return { recovered: 0 };
+    const mine = await sb.from("rule_versions").select("rule_key,review_state").eq("run_id", run.id);
+    assertDb(mine);
+    const done = new Set(((mine.data ?? []) as Any[]).filter((r) => r.review_state !== "invalid").map((r) => r.rule_key as string));
+    let recovered = 0;
+    for (const c of ((run.raw_output?.candidates ?? []) as Any[])) {
+      const { checked, payload } = candidateRecord(source, run.id, c, source.text);
+      if (!checked.valid || done.has(payload.rule_key)) continue;
+      const current = await sb.from("rule_versions").select("id,review_state").eq("source_id", source.id).eq("rule_key", payload.rule_key).eq("is_current", true).maybeSingle();
+      assertDb(current);
+      if (current.data?.review_state === "reviewed") continue;
+      assertDb(await sb.rpc("publish_rule_version", { p_rule: { ...payload, change_reason: "Re-checked stored reader output; quote matched ignoring line breaks and typographic quotes" }, p_evidence: checked.evidence }));
+      done.add(payload.rule_key); recovered++;
+    }
+    if (recovered) {
+      assertDb(await sb.from("extraction_runs").update({ valid: (run.valid ?? 0) + recovered, invalid: Math.max(0, (run.invalid ?? 0) - recovered) }).eq("id", run.id));
+      await audit(ctx, "extract.recheck", "source_documents", source.doc_id, { runId: run.id, recovered });
+    }
+    return { recovered };
   });
 
 function slug(s: string) { return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48); }
@@ -451,9 +515,12 @@ export const geocodeBatch = createServerFn({ method: "POST" })
         if (m.addressComponents?.state && m.addressComponents.state !== p.state) warnings.push("State in match differs from supplied state");
         const zipSent = !!attempt.params["zip"];
         const zipNote = p.zip && m.addressComponents?.zip && m.addressComponents.zip !== p.zip ? `Supplied ZIP ${p.zip} differs from matched ZIP ${m.addressComponents.zip}${zipSent ? "" : " (ZIP was not used in the successful search)"}` : null;
-        if (zipNote && zipSent) warnings.push(zipNote);
+        // Several sample rows carry a ZIP from another town or state. The street and city gave one clear match, so
+        // the ZIP disagreement is recorded for the record but does not make the place uncertain.
+        const blocking = warnings.length > 0;
+        if (zipNote) warnings.push(`${zipNote} (recorded; the single street-and-city match is used)`);
         row = {
-          status: matches.length !== 1 || places.size > 1 || warnings.length > 0 ? "ambiguous" : "resolved",
+          status: matches.length !== 1 || places.size > 1 || blocking ? "ambiguous" : "resolved",
           lat: m.coordinates?.y ?? null, lon: m.coordinates?.x ?? null, matched_address: m.matchedAddress ?? null,
           county_name: county?.NAME ?? null,
           place_name: inc?.BASENAME ?? inc?.NAME ?? cdp?.BASENAME ?? null,

@@ -8,7 +8,7 @@ import { useRef, useState } from "react";
 import { CheckCircle2, Circle, CircleDashed } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { importStart, importProperties, importSources, importFinish, extractSource, geocodeBatch, getExtractionPlan, finishSource, autoLinkCases } from "@/lib/admin.functions";
+import { importStart, importProperties, importSources, importFinish, extractSource, geocodeBatch, getExtractionPlan, finishSource, autoLinkCases, listRecheckRuns, recheckRun } from "@/lib/admin.functions";
 import { exportSubmission, getOverview } from "@/lib/engine.functions";
 import { Disclaimer, PageHeader, download } from "@/components/app/ui";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,7 @@ function Admin() {
   const overview = useQuery({ queryKey: ["overview"], queryFn: () => getOverview(), throwOnError: false });
   const fStart = useServerFn(importStart), fProps = useServerFn(importProperties), fSrc = useServerFn(importSources), fFinish = useServerFn(importFinish);
   const fPlan = useServerFn(getExtractionPlan), fDone = useServerFn(finishSource), fLink = useServerFn(autoLinkCases);
+  const fRecheckList = useServerFn(listRecheckRuns), fRecheck = useServerFn(recheckRun);
   const fExtract = useServerFn(extractSource), fGeo = useServerFn(geocodeBatch), fExport = useServerFn(exportSubmission);
   const plan = useQuery({ enabled: isStaff, queryKey: ["extraction-plan"], queryFn: () => fPlan(), throwOnError: false });
   const cases = useQuery({
@@ -122,6 +123,20 @@ function Admin() {
       if (sourceOk) finished.add(s.id);
       if (halted) break;
     }
+    // A free second look at candidates the quote check rejected: stored reader output, no AI call.
+    let recovered = 0;
+    if (!stopRef.current) {
+      try {
+        const runs = await fRecheckList();
+        let i = 0;
+        for (const r of runs) {
+          if (stopRef.current) break;
+          try { recovered += (await fRecheck({ data: { runId: r.id } })).recovered; } catch (e) { log("Re-checking rejected rules", i, runs.length, `${r.doc_id}: ${(e as Error).message}`); }
+          i++;
+          if (i % 5 === 0 || i === runs.length) log("Re-checking rejected rules", i, runs.length, i === runs.length ? `${recovered} rejected rules recovered without using AI credits` : undefined);
+        }
+      } catch (e) { log("Re-checking rejected rules", 0, 1, `Skipped: ${(e as Error).message}`); }
+    }
     let retired = 0, tidied = 0;
     for (const id of finished) {
       if (stopRef.current) break;
@@ -130,7 +145,7 @@ function Admin() {
       if (tidied % 6 === 0 || tidied === finished.size) log("Tidying up older rules", tidied, finished.size);
     }
     const remaining = parts - ok;
-    log(remaining === 0 ? `Reading complete: ${ok} parts read${retired ? `, ${retired} older rules replaced` : ""}` : `Reading incomplete: ${ok} read, ${failed} failed, ${remaining} still to read${halted ? ` (${halted})` : ""} — run again to continue`, ok, Math.max(parts, 1));
+    log(remaining === 0 ? `Reading complete: ${ok} parts read${recovered ? `, ${recovered} rejected rules recovered` : ""}${retired ? `, ${retired} older rules replaced` : ""}` : `Reading incomplete: ${ok} read, ${failed} failed, ${remaining} still to read${halted ? ` (${halted})` : ""} — run again to continue`, ok, Math.max(parts, 1));
     qc.invalidateQueries();
     return remaining === 0;
   }
@@ -227,7 +242,7 @@ function Admin() {
           </div>
           <div>
             <div className="font-medium">2 · Read the legal texts</div>
-            <p className="mt-1 text-muted-foreground">An AI reader turns each text into rules. Every rule must quote the text exactly or it is rejected. Uses AI credits.</p>
+            <p className="mt-1 text-muted-foreground">An AI reader turns each text into rules. Every rule must quote the text exactly or it is rejected. Reading uses AI credits; rejected rules are then re-checked for free.</p>
             <Button variant="outline" className="mt-2" disabled={!isStaff || busy} onClick={() => runJob(async () => { await bulkExtract(); })}>Read the remaining texts</Button>
           </div>
           <div>
