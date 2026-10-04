@@ -374,15 +374,15 @@ export type Database = {
           citation: string
           city: string | null
           confidence: number | null
-          coverage_status: string
-          exemptions_status: string
           coverage: Json | null
+          coverage_status: string
           coverage_text: string | null
           created_at: string
           created_by: string | null
           effective_date: string | null
           enacted_date: string | null
           exemptions: Json | null
+          exemptions_status: string
           exemptions_text: string | null
           expiry_date: string | null
           id: string
@@ -411,15 +411,15 @@ export type Database = {
           citation: string
           city?: string | null
           confidence?: number | null
-          coverage_status?: string
-          exemptions_status?: string
           coverage?: Json | null
+          coverage_status?: string
           coverage_text?: string | null
           created_at?: string
           created_by?: string | null
           effective_date?: string | null
           enacted_date?: string | null
           exemptions?: Json | null
+          exemptions_status?: string
           exemptions_text?: string | null
           expiry_date?: string | null
           id?: string
@@ -448,15 +448,15 @@ export type Database = {
           citation?: string
           city?: string | null
           confidence?: number | null
-          coverage_status?: string
-          exemptions_status?: string
           coverage?: Json | null
+          coverage_status?: string
           coverage_text?: string | null
           created_at?: string
           created_by?: string | null
           effective_date?: string | null
           enacted_date?: string | null
           exemptions?: Json | null
+          exemptions_status?: string
           exemptions_text?: string | null
           expiry_date?: string | null
           id?: string
@@ -505,8 +505,8 @@ export type Database = {
       }
       scenarios: {
         Row: {
-          base_rule_id: string | null
           as_of: string
+          base_rule_id: string | null
           created_at: string
           created_by: string | null
           description: string | null
@@ -516,8 +516,8 @@ export type Database = {
           rule_key: string
         }
         Insert: {
-          base_rule_id?: string | null
           as_of?: string
+          base_rule_id?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
@@ -527,8 +527,8 @@ export type Database = {
           rule_key: string
         }
         Update: {
-          base_rule_id?: string | null
           as_of?: string
+          base_rule_id?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
@@ -537,7 +537,15 @@ export type Database = {
           patch?: Json
           rule_key?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "scenarios_base_rule_id_fkey"
+            columns: ["base_rule_id"]
+            isOneToOne: false
+            referencedRelation: "rule_versions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       semantic_mappings: {
         Row: {
@@ -654,6 +662,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      activate_dataset: {
+        Args: { p_dataset: string; p_receipt: Json }
+        Returns: undefined
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -662,6 +674,15 @@ export type Database = {
         Returns: boolean
       }
       is_staff: { Args: { _user_id: string }; Returns: boolean }
+      publish_resolution: { Args: { p_row: Json }; Returns: undefined }
+      publish_rule_version: {
+        Args: { p_evidence: Json; p_expected?: string; p_rule: Json }
+        Returns: string
+      }
+      utf16_slice: {
+        Args: { e: number; s: number; t: string }
+        Returns: string
+      }
     }
     Enums: {
       app_role: "admin" | "reviewer" | "user"
