@@ -44,13 +44,13 @@ function SourcePage() {
     queryFn: async () => getData(await supabase.from("extraction_runs").select("*").eq("source_id", src.data!.id).order("created_at", { ascending: false })) ?? [],
   });
 
-  async function run() {
+  async function run(force = false) {
     if (!src.data) return;
     let chunk = 0;
     try {
       for (;;) {
         setBusy(`Extracting part ${chunk + 1}…`);
-        const r = await extract({ data: { sourceId: src.data.id, chunkIndex: chunk } });
+        const r = await extract({ data: { sourceId: src.data.id, chunkIndex: chunk, force } });
         toast.success(`Part ${r.chunkIndex + 1}/${r.chunkCount}: ${r.valid} valid, ${r.invalid} invalid`);
         if (r.done) break;
         chunk++;
@@ -106,7 +106,8 @@ function SourcePage() {
             </dl>
           </div>
           {s.text && isStaff && (
-            <Button onClick={run} disabled={!!busy} className="w-full">{busy ?? (runs.data?.length ? "Re-run automated extraction" : "Run automated extraction")}</Button>
+            <Button onClick={() => run(false)} disabled={!!busy} className="w-full">{busy ?? (runs.data?.length ? "Resume unfinished parts" : "Run automated extraction")}</Button>
+            {!!runs.data?.length && <Button variant="outline" onClick={() => { if (confirm("Re-read every part again? This uses AI credits even for finished parts.")) run(true); }} disabled={!!busy} className="mt-2 w-full">Re-extract all parts (uses credits)</Button>}
           )}
           <div className="paper rounded-sm p-4">
             <div className="eyebrow mb-2">Extracted rules ({rules.data?.length ?? 0})</div>
