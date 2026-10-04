@@ -13,7 +13,9 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as ManagerRouteImport } from './routes/manager'
 import { Route as RenterRouteImport } from './routes/renter'
+import { Route as ReviewerRouteImport } from './routes/reviewer'
 import { Route as PropertyAddressIdRouteImport } from './routes/property.$addressId'
+import { Route as SourcesDocIdRouteImport } from './routes/sources.$docId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -35,9 +37,19 @@ const RenterRoute = RenterRouteImport.update({
   path: '/renter',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReviewerRoute = ReviewerRouteImport.update({
+  id: '/reviewer',
+  path: '/reviewer',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PropertyAddressIdRoute = PropertyAddressIdRouteImport.update({
   id: '/property/$addressId',
   path: '/property/$addressId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SourcesDocIdRoute = SourcesDocIdRouteImport.update({
+  id: '/sources/$docId',
+  path: '/sources/$docId',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -46,14 +58,18 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/manager': typeof ManagerRoute
   '/renter': typeof RenterRoute
+  '/reviewer': typeof ReviewerRoute
   '/property/$addressId': typeof PropertyAddressIdRoute
+  '/sources/$docId': typeof SourcesDocIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/manager': typeof ManagerRoute
   '/renter': typeof RenterRoute
+  '/reviewer': typeof ReviewerRoute
   '/property/$addressId': typeof PropertyAddressIdRoute
+  '/sources/$docId': typeof SourcesDocIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -61,15 +77,38 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/manager': typeof ManagerRoute
   '/renter': typeof RenterRoute
+  '/reviewer': typeof ReviewerRoute
   '/property/$addressId': typeof PropertyAddressIdRoute
+  '/sources/$docId': typeof SourcesDocIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/manager' | '/renter' | '/property/$addressId'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/manager'
+    | '/renter'
+    | '/reviewer'
+    | '/property/$addressId'
+    | '/sources/$docId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/manager' | '/renter' | '/property/$addressId'
+  to:
+    | '/'
+    | '/auth'
+    | '/manager'
+    | '/renter'
+    | '/reviewer'
+    | '/property/$addressId'
+    | '/sources/$docId'
   id:
-    '__root__' | '/' | '/auth' | '/manager' | '/renter' | '/property/$addressId'
+    | '__root__'
+    | '/'
+    | '/auth'
+    | '/manager'
+    | '/renter'
+    | '/reviewer'
+    | '/property/$addressId'
+    | '/sources/$docId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -77,7 +116,9 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ManagerRoute: typeof ManagerRoute
   RenterRoute: typeof RenterRoute
+  ReviewerRoute: typeof ReviewerRoute
   PropertyAddressIdRoute: typeof PropertyAddressIdRoute
+  SourcesDocIdRoute: typeof SourcesDocIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -110,11 +151,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RenterRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reviewer': {
+      id: '/reviewer'
+      path: '/reviewer'
+      fullPath: '/reviewer'
+      preLoaderRoute: typeof ReviewerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/property/$addressId': {
       id: '/property/$addressId'
       path: '/property/$addressId'
       fullPath: '/property/$addressId'
       preLoaderRoute: typeof PropertyAddressIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sources/$docId': {
+      id: '/sources/$docId'
+      path: '/sources/$docId'
+      fullPath: '/sources/$docId'
+      preLoaderRoute: typeof SourcesDocIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -125,7 +180,9 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   ManagerRoute: ManagerRoute,
   RenterRoute: RenterRoute,
+  ReviewerRoute: ReviewerRoute,
   PropertyAddressIdRoute: PropertyAddressIdRoute,
+  SourcesDocIdRoute: SourcesDocIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
