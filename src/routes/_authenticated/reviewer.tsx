@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-guard";
 import { getData } from "@/lib/db-result";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -10,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
 
 export const Route = createFileRoute("/_authenticated/reviewer")({
+  beforeLoad: () => requireStaffPage(false),
   head: () => ({
     meta: [
       { title: "Legal & policy reviewer — Housing Law Navigator" },
