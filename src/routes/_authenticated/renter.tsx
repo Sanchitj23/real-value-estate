@@ -18,7 +18,7 @@ export const Route = createFileRoute("/_authenticated/renter")({
       { property: "og:description", content: "Protections, missing facts and citations by address." },
     ],
   }),
-  validateSearch: (s: Record<string, unknown>): { q?: string } => (typeof s.q === "string" && s.q ? { q: s.q } : {}),
+  validateSearch: (s: Record<string, unknown>): { q?: string } => (typeof s['q'] === "string" && s['q'] ? { q: s['q'] } : {}),
   loader: ({ context }) => context.queryClient.ensureQueryData(portfolioQ(DEFAULT_AS_OF)),
   component: Renter,
 });
