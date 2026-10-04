@@ -125,54 +125,97 @@ export const importFinish = createServerFn({ method: "POST" })
 /* ---------------- Extraction ---------------- */
 
 const PIPELINE = "extract-v1";
-const MODEL = "google/gemini-3-flash-preview";
+const MODEL = "openai/gpt-6-astra";
 const CHUNK = 40000, OVERLAP = 1500;
 
 export function chunkCount(len: number) { return Math.max(1, Math.ceil((len - OVERLAP) / (CHUNK - OVERLAP))); }
 
-const extractionTool = {
-  type: "function",
-  function: {
-    name: "record_rules",
-    description: "Record every distinct rental-housing legal provision in the text that falls in one of the six categories.",
-    parameters: {
-      type: "object",
-      properties: {
-        rules: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              category: { type: "string", enum: [...CATEGORIES] },
-              title: { type: "string" },
-              requirement: { type: "string", description: "One or two plain-language sentences." },
-              key_value: { type: ["string", "null"], description: "Headline number/formula, e.g. 'lesser of 5%+CPI or 10%'." },
-              citation: { type: "string", description: "Official cite (code section, ordinance number, bill)." },
-              legal_status: { type: "string", enum: ["enacted", "pending", "failed", "repealed", "unknown"], description: "From the text only: enacted law, pending bill/proposal, failed/struck measure." },
-              enacted_date: { type: ["string", "null"], description: "YYYY-MM-DD or YYYY if stated." },
-              effective_date: { type: ["string", "null"], description: "YYYY-MM-DD, YYYY-MM or YYYY when the text states an operative/effective date." },
-              expiry_date: { type: ["string", "null"] },
-              coverage_text: { type: ["string", "null"] },
-              exemptions_text: { type: ["string", "null"] },
-              coverage_expr_json: { type: ["string", "null"], description: "JSON string of a condition tree, or null if covering all residential rentals in the jurisdiction." },
-              exemptions_expr_json: { type: ["string", "null"], description: "JSON string of a condition tree; true means exempt." },
-              interaction_text: { type: ["string", "null"], description: "Stated relation to other laws (preemption, stricter local rules)." },
-              quoted_span: { type: "string", description: "EXACT verbatim text copied from the document (min 20 chars) supporting the requirement." },
-              supporting_quotes: {
-                type: "array",
-                items: { type: "object", properties: { field: { type: "string" }, quote: { type: "string" } }, required: ["field", "quote"] },
-                description: "Verbatim quotes supporting effective_date, coverage and exemptions.",
-              },
-              confidence: { type: "number" },
-            },
-            required: ["category", "title", "requirement", "citation", "legal_status", "quoted_span", "confidence"],
+const nstr = { type: ["string", "null"] };
+const ruleSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    rules: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          category: { type: "string", enum: [...CATEGORIES] },
+          title: { type: "string" },
+          requirement: { type: "string", description: "One or two plain-language sentences." },
+          key_value: { ...nstr, description: "Headline number/formula, e.g. 'lesser of 5%+CPI or 10%'." },
+          citation: { type: "string", description: "Official cite (code section, ordinance number, bill)." },
+          legal_status: { type: "string", enum: ["enacted", "pending", "failed", "repealed", "unknown"], description: "From the text only." },
+          enacted_date: { ...nstr, description: "YYYY-MM-DD or YYYY if stated." },
+          effective_date: { ...nstr, description: "YYYY-MM-DD, YYYY-MM or YYYY when the text states an operative date." },
+          expiry_date: nstr,
+          coverage_text: nstr,
+          exemptions_text: nstr,
+          coverage_expr_json: { ...nstr, description: "JSON string of a condition tree, or null if covering all residential rentals in the jurisdiction." },
+          exemptions_expr_json: { ...nstr, description: "JSON string of a condition tree; true means exempt." },
+          interaction_text: { ...nstr, description: "Stated relation to other laws (preemption, stricter local rules)." },
+          quoted_span: { type: "string", description: "EXACT verbatim text copied from the document (min 20 chars) supporting the requirement." },
+          supporting_quotes: {
+            type: "array",
+            items: { type: "object", additionalProperties: false, properties: { field: { type: "string" }, quote: { type: "string" } }, required: ["field", "quote"] },
           },
+          confidence: { type: "number" },
         },
+        required: ["category", "title", "requirement", "key_value", "citation", "legal_status", "enacted_date", "effective_date", "expiry_date", "coverage_text", "exemptions_text", "coverage_expr_json", "exemptions_expr_json", "interaction_text", "quoted_span", "supporting_quotes", "confidence"],
       },
-      required: ["rules"],
     },
   },
+  required: ["rules"],
 };
+
+/** Streams a Responses API call and returns the concatenated output text. */
+async function callModel(system: string, user: string): Promise<string> {
+  const resp = await fetch("https://ai.gateway.lovable.dev/v1/responses", {
+    method: "POST",
+    headers: { "Lovable-API-Key": process.env["LOVABLE_API_KEY"] ?? "", "Content-Type": "application/json", "X-Lovable-AIG-SDK": "fetch" },
+    body: JSON.stringify({
+      model: MODEL,
+      instructions: system,
+      input: [{ role: "user", content: user }],
+      stream: true,
+      store: false,
+      reasoning: { effort: "low", summary: "auto" },
+      include: ["reasoning.encrypted_content"],
+      text: { format: { type: "json_schema", name: "record_rules", strict: true, schema: ruleSchema } },
+    }),
+  });
+  if (!resp.ok || !resp.body) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(resp.status === 429 ? "AI rate limit reached — wait and resume." : resp.status === 402 ? "AI credits exhausted — add credits in workspace billing." : `AI error ${resp.status}: ${body.slice(0, 300)}`);
+  }
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "", out = "", completed = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, idx).trim();
+      buf = buf.slice(idx + 1);
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      let ev: { type?: string; delta?: string; error?: { message?: string }; response?: { output?: Array<{ type: string; content?: Array<{ type: string; text?: string }> }>; error?: { message?: string } } };
+      try { ev = JSON.parse(payload); } catch { continue; }
+      if (ev.type === "response.output_text.delta" && ev.delta) out += ev.delta;
+      else if (ev.type === "error" || ev.type === "response.failed") throw new Error(ev.error?.message ?? ev.response?.error?.message ?? "AI stream failed");
+      else if (ev.type === "response.completed") {
+        completed = (ev.response?.output ?? []).filter((o) => o.type === "message").flatMap((o) => o.content ?? []).filter((c) => c.type === "output_text").map((c) => c.text ?? "").join("");
+      }
+    }
+  }
+  const text = out || completed;
+  if (!text) throw new Error("AI returned empty output");
+  return text;
+}
 
 const SYSTEM = `You extract structured rental-housing rules from a supplied legal text for a research prototype.
 Categories: ${CATEGORIES.join(", ")}. Ignore provisions outside these categories.
@@ -212,28 +255,15 @@ export const extractSource = createServerFn({ method: "POST" })
     const state = isCity ? j.split(",")[1].trim() : j;
     const city = isCity ? j.split(",")[0].trim() : null;
 
-    const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${process.env["LOVABLE_API_KEY"]}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: "system", content: SYSTEM },
-          { role: "user", content: `Document ${source.doc_id} (jurisdiction per manifest: ${j}; part ${data.chunkIndex + 1} of ${n}).\n<document>\n${chunk}\n</document>` },
-        ],
-        tools: [extractionTool],
-        tool_choice: { type: "function", function: { name: "record_rules" } },
-      }),
-    });
-    if (!resp.ok) {
-      const msg = resp.status === 429 ? "AI rate limit reached — wait and resume." : resp.status === 402 ? "AI credits exhausted — add credits in workspace billing." : `AI error ${resp.status}`;
+    let candidates: Array<Record<string, unknown>> = [];
+    try {
+      const out = await callModel(SYSTEM, `Document ${source.doc_id} (jurisdiction per manifest: ${j}; part ${data.chunkIndex + 1} of ${n}).\n<document>\n${chunk}\n</document>`);
+      candidates = JSON.parse(out).rules ?? [];
+    } catch (e) {
+      const msg = (e as Error).message;
       await sb.from("extraction_runs").update({ status: "error", error: msg, finished_at: new Date().toISOString() }).eq("id", runId);
       throw new Error(msg);
     }
-    const json = await resp.json();
-    const args = json.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-    let candidates: Array<Record<string, unknown>> = [];
-    try { candidates = JSON.parse(args ?? "{}").rules ?? []; } catch { candidates = []; }
 
     let valid = 0, invalid = 0;
     for (const c of candidates) {
