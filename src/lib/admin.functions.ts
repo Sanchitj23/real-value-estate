@@ -5,7 +5,10 @@ import { ExprSchema, FACT_KEYS } from "./engine/expr";
 import { CATEGORIES } from "./engine/applicability";
 import { findQuote } from "./engine/quote";
 
-type Ctx = { supabase: ReturnType<typeof import("@supabase/supabase-js").createClient>; userId: string };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ctx = { supabase: any; userId: string };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Any = any;
 
 async function requireStaff(ctx: Ctx, adminOnly = false) {
   const { data } = await ctx.supabase.from("user_roles").select("role").eq("user_id", ctx.userId);
@@ -24,11 +27,11 @@ export const importStart = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({
     upload_sha256: z.string().length(64),
     format_version: z.string().startsWith("housing-law-bootstrap/"),
-    package_metadata: z.record(z.any()),
+    package_metadata: z.record(z.any()) as z.ZodType<Any>,
     known_gaps: z.array(z.any()),
     change_tests: z.array(z.any()).length(5),
     rule_record_schema: z.record(z.any()),
-    counts: z.record(z.number()),
+    counts: z.record(z.number()) as z.ZodType<Any>,
   }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
@@ -68,7 +71,7 @@ export const importProperties = createServerFn({ method: "POST" })
   });
 
 const SourceRow = z.object({
-  doc_id: z.string().regex(/^D\d{3}$/), manifest_row: z.record(z.string()), supplied_text_available: z.boolean(),
+  doc_id: z.string().regex(/^D\d{3}$/), manifest_row: z.record(z.string()) as z.ZodType<Any>, supplied_text_available: z.boolean(),
   text: z.string().nullable(), local_text_sha256: z.string().nullable(), manifest_hash_matches_local: z.boolean().nullable(),
   link_only_row: z.record(z.any()).nullable(),
 });
@@ -93,7 +96,7 @@ export const importSources = createServerFn({ method: "POST" })
 
 export const importFinish = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ datasetId: z.string().uuid(), expected: z.record(z.number()) }).parse(d))
+  .inputValidator((d) => z.object({ datasetId: z.string().uuid(), expected: z.record(z.number()) as z.ZodType<Any> }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     await requireStaff(ctx, true);
@@ -247,15 +250,15 @@ export const extractSource = createServerFn({ method: "POST" })
     const { data: run } = await sb.from("extraction_runs").insert({
       source_id: source.id, model: MODEL, pipeline_version: PIPELINE, chunk_index: data.chunkIndex, chunk_count: n, created_by: ctx.userId,
     }).select("id").single();
-    const runId = (run as { id: string }).id;
+    const runId = (run as Any).id as string;
 
     // Jurisdiction comes from the manifest, not the model.
     const j = (source.jurisdictions ?? "").trim();
     const isCity = j.includes(",");
-    const state = isCity ? j.split(",")[1].trim() : j;
-    const city = isCity ? j.split(",")[0].trim() : null;
+    const state = isCity ? (j.split(",")[1] ?? "").trim() : j;
+    const city = isCity ? (j.split(",")[0] ?? "").trim() : null;
 
-    let candidates: Array<Record<string, unknown>> = [];
+    let candidates: Any[] = [];
     try {
       const out = await callModel(SYSTEM, `Document ${source.doc_id} (jurisdiction per manifest: ${j}; part ${data.chunkIndex + 1} of ${n}).\n<document>\n${chunk}\n</document>`);
       candidates = JSON.parse(out).rules ?? [];
@@ -338,7 +341,7 @@ export const geocodeBatch = createServerFn({ method: "POST" })
     const out = await Promise.all(((props ?? []) as Array<{ id: string; address_id: string; street_address: string; state: string; zip: string | null }>).map(async (p) => {
       const qs = new URLSearchParams({ street: p.street_address, state: p.state, zip: p.zip ?? "", benchmark: "Public_AR_Current", vintage: "Current_Current", format: "json" });
       const url = `https://geocoding.geo.census.gov/geocoder/geographies/address?${qs}`;
-      let row: Record<string, unknown>;
+      let row: Any;
       try {
         const r = await fetch(url, { headers: { Accept: "application/json" } });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -371,7 +374,7 @@ export const geocodeBatch = createServerFn({ method: "POST" })
       }
       await sb.from("jurisdiction_resolutions").update({ is_current: false }).eq("property_id", p.id).eq("is_current", true);
       await sb.from("jurisdiction_resolutions").insert({ property_id: p.id, benchmark: "Public_AR_Current", vintage: "Current_Current", created_by: ctx.userId, ...row } as never);
-      return { address_id: p.address_id, status: row.status };
+      return { address_id: p.address_id, status: String(row["status"]) };
     }));
     return out;
   });

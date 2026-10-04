@@ -32,7 +32,7 @@ const STATUS_LABEL: Record<string, string> = {
 export function Status({ value, className }: { value: string | null | undefined; className?: string }) {
   const v = value ?? "none";
   return (
-    <span className={cn("inline-flex items-center rounded-sm border px-1.5 py-0.5 font-mono text-[0.68rem] uppercase tracking-wider whitespace-nowrap", STATUS_STYLE[v] ?? STATUS_STYLE.none, className)}>
+    <span className={cn("inline-flex items-center rounded-sm border px-1.5 py-0.5 font-mono text-[0.68rem] uppercase tracking-wider whitespace-nowrap", STATUS_STYLE[v] ?? STATUS_STYLE["none"], className)}>
       {value ? STATUS_LABEL[v] ?? v.replace(/_/g, " ") : "—"}
     </span>
   );
