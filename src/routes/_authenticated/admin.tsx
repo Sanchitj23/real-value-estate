@@ -1,3 +1,4 @@
+import { MissingSources } from "@/components/app/MissingSources";
 import { requireStaffPage } from "@/lib/staff-guard";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -174,7 +175,7 @@ function Admin() {
 
       <section className="paper space-y-3 rounded-sm p-5">
         <h2 className="text-2xl">4 · Submission exports</h2>
-        <p className="text-sm text-muted-foreground">Organizer-shaped files generated from the same engine. No judge score is computed — no scoring script or answer key was supplied.</p>
+        <p className="text-sm text-muted-foreground">Organizer-shaped files generated from the same engine. rules.json and lookups.json (modules A+B) need finished extraction only; changes.json also needs every T1–T5 check to pass. No judge score is computed — no scoring script or answer key was supplied.</p>
         <div className="flex flex-wrap gap-2">
           {(["rules", "lookups", "changes"] as const).map((k) => (
             <Button disabled={!isStaff || busy} key={k} variant="outline" onClick={async () => { try { const result=await fExport({ data: { kind: k, diagnostic: false } }); download(`${k}.json`,result.artifact); download(`${k}-receipt.json`,result.receipt); } catch (e) { toast.error((e as Error).message); } }}>{k}.json</Button>
@@ -182,6 +183,7 @@ function Admin() {
         </div>
         <Button disabled={!isStaff || busy} variant="outline" onClick={async()=>{try { for(const kind of ["rules","lookups","changes"] as const) {const result=await fExport({data:{kind,diagnostic:true}}); download(`diagnostic-${kind}.json`,result.artifact); download(`diagnostic-${kind}-receipt.json`,result.receipt);} }catch(e){toast.error((e as Error).message)}}}>Download diagnostic exports (not a verified submission)</Button>
       </section>
+      <MissingSources />
     </div>
   );
 }
