@@ -11,7 +11,7 @@ import { QueryDate } from "./engine/dates";
 import { canonicalJson, diffLabel, type Patch } from "./engine/change";
 import { PatchSchema } from "./engine/validation";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { MODEL, PIPELINE, pendingChunks } from "./engine/extraction";
+import { PIPELINE, pendingChunks } from "./engine/extraction";
 import type { Json } from "@/integrations/supabase/types";
 import { checkCase } from "./engine/case-check";
 const DateStr = QueryDate;
