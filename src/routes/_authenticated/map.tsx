@@ -109,7 +109,9 @@ function MapPage() {
     key: `${state}|${focusCity ?? ""}|${flyTo ?? ""}|${places.length}|${located.length > 0}`,
     bounds: flyRow && hasPoint(flyRow) ? aroundPoint(flyRow.resolution!.lat!, flyRow.resolution!.lon!)
       : focusPlace ? placeBounds(focusPlace)
-        : mergeBounds([...places.map(placeBounds), boundsOf(located.map((r) => [r.resolution!.lon!, r.resolution!.lat!] as [number, number]))]),
+        // The cities' outlines frame the view; one far-away address (a single Lakewood row) must not stretch it.
+        : places.length ? mergeBounds(places.map(placeBounds))
+          : mergeBounds([boundsOf(located.map((r) => [r.resolution!.lon!, r.resolution!.lat!] as [number, number]))]),
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [state, focusCity, flyTo, places.length, located.length > 0, !!flyRow]);
 
