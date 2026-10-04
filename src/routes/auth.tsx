@@ -1,18 +1,19 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PageHeader } from "@/components/app/ui";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Staff sign in — Housing Law Navigator" },
-      { name: "description", content: "Sign in to import data, run extraction and review rules." },
-      { property: "og:title", content: "Staff sign in — Housing Law Navigator" },
-      { property: "og:description", content: "Reviewer and admin access." },
+      { title: "Sign in — Housing Law Navigator" },
+      { name: "description", content: "Sign in or create an account to look up rental rules for any property." },
+      { property: "og:title", content: "Sign in — Housing Law Navigator" },
+      { property: "og:description", content: "Access your Housing Law Navigator dashboard." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: AuthPage,
@@ -25,32 +26,38 @@ function AuthPage() {
   const [busy, setBusy] = useState(false);
   const nav = useNavigate();
 
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => { if (data.session) nav({ to: "/dashboard", replace: true }); });
+  }, [nav]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     if (mode === "in") {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) toast.error(error.message); else nav({ to: "/admin" });
+      if (error) toast.error(error.message); else nav({ to: "/dashboard" });
     } else {
-      const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin + "/admin" } });
+      const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin + "/dashboard" } });
       if (error) toast.error(error.message);
-      else if (!data.session) toast.success("Check your email to confirm the account.");
-      else nav({ to: "/admin" });
+      else if (!data.session) toast.success("Check your email to confirm your account.");
+      else nav({ to: "/dashboard" });
     }
     setBusy(false);
   }
 
   return (
-    <div className="mx-auto max-w-md">
-      <PageHeader eyebrow="Staff access" title={mode === "in" ? "Sign in" : "Create account"}>
-        Public sample results are readable without an account. The first account created becomes the admin; admins can grant reviewer access.
-      </PageHeader>
-      <form onSubmit={submit} className="paper space-y-3 rounded-sm p-6">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6">
+      <Link to="/" className="mb-8 font-serif text-2xl text-ink">Housing Law <em>Navigator</em></Link>
+      <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-md border border-border bg-card p-8 shadow-sm">
+        <div>
+          <h1 className="text-xl font-medium text-foreground">{mode === "in" ? "Sign in" : "Create your account"}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{mode === "in" ? "Welcome back." : "It takes less than a minute."}</p>
+        </div>
         <Input type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
         <Input type="password" required minLength={8} placeholder="Password (8+ characters)" value={password} onChange={(e) => setPassword(e.target.value)} />
         <Button type="submit" disabled={busy} className="w-full">{mode === "in" ? "Sign in" : "Create account"}</Button>
-        <button type="button" className="w-full text-center text-xs underline" onClick={() => setMode(mode === "in" ? "up" : "in")}>
-          {mode === "in" ? "Need an account? Create one" : "Have an account? Sign in"}
+        <button type="button" className="w-full text-center text-sm text-muted-foreground hover:text-foreground" onClick={() => setMode(mode === "in" ? "up" : "in")}>
+          {mode === "in" ? "New here? Create an account" : "Already have an account? Sign in"}
         </button>
       </form>
     </div>

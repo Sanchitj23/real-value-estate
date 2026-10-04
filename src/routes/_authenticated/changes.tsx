@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
 
-export const Route = createFileRoute("/changes")({
+export const Route = createFileRoute("/_authenticated/changes")({
   head: () => ({
     meta: [
       { title: "Law changes & scenarios — Housing Law Navigator" },

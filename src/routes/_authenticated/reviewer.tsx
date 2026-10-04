@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
 
-export const Route = createFileRoute("/reviewer")({
+export const Route = createFileRoute("/_authenticated/reviewer")({
   head: () => ({
     meta: [
       { title: "Legal & policy reviewer — Housing Law Navigator" },

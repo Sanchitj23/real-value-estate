@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
 
-export const Route = createFileRoute("/console")({
+export const Route = createFileRoute("/_authenticated/console")({
   head: () => ({
     meta: [
       { title: "Admin console — monitoring & users — Housing Law Navigator" },

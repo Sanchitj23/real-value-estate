@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 
 const portfolioQ = queryOptions({ queryKey: ["portfolio", DEFAULT_AS_OF], queryFn: () => getPortfolio({ data: { asOf: DEFAULT_AS_OF } }) });
 
-export const Route = createFileRoute("/renter")({
+export const Route = createFileRoute("/_authenticated/renter")({
   head: () => ({
     meta: [
       { title: "Renter workspace — Housing Law Navigator" },

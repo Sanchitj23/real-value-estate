@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
 
-export const Route = createFileRoute("/rules/$id")({
+export const Route = createFileRoute("/_authenticated/rules/$id")({
   head: () => ({
     meta: [
       { title: "Extracted rule — Housing Law Navigator" },

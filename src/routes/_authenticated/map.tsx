@@ -5,7 +5,7 @@ import { getPortfolio } from "@/lib/engine.functions";
 import { CATEGORIES, CATEGORY_LABEL, DEFAULT_AS_OF } from "@/lib/engine/applicability";
 import { Disclaimer, PageHeader, Status } from "@/components/app/ui";
 
-export const Route = createFileRoute("/map")({
+export const Route = createFileRoute("/_authenticated/map")({
   head: () => ({
     meta: [
       { title: "Sample map — Housing Law Navigator" },

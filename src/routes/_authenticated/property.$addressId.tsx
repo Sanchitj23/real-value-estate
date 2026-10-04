@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 const reportQ = (addressId: string, asOf: string) =>
   queryOptions({ queryKey: ["report", addressId, asOf], queryFn: () => getPropertyReport({ data: { addressId, asOf } }) });
 
-export const Route = createFileRoute("/property/$addressId")({
+export const Route = createFileRoute("/_authenticated/property/$addressId")({
   loader: async ({ context, params }) => {
     const r = await context.queryClient.ensureQueryData(reportQ(params.addressId, DEFAULT_AS_OF));
     if (!r) throw notFound();
