@@ -74,7 +74,9 @@ function PropertyReport() {
           <div className="eyebrow mb-2">What must be established before acting ({allMissing.length})</div>
           {allMissing.length ? (
             <ul className="grid gap-1 sm:grid-cols-2">{allMissing.map((m) => <li key={m}>• {factLabelOf(m)}{FACTS[m as FactKey]?.question && <p className="text-xs text-muted-foreground">{FACTS[m as FactKey].question}</p>}</li>)}</ul>
-          ) : <p className="text-muted-foreground">No missing facts on the evaluated rules.</p>}
+          ) : r.outcomes.length === 0
+            ? <p className="text-st-unknown">Analysis not available yet: no rules have been extracted for this address's jurisdictions, or the address hasn't been placed. This is not a sign that no law applies.</p>
+            : <p className="text-muted-foreground">No missing facts on the {r.outcomes.length} evaluated rules.</p>}
           <p className="mt-2 text-xs text-muted-foreground">Missing facts are treated as unknown, never false. Year built is not a certificate-of-occupancy date.</p>
         </div>
       </section>
