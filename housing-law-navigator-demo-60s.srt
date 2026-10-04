@@ -1,0 +1,33 @@
+1
+00:00:00,000 --> 00:00:06,563
+Housing Law Navigator turns scattered state and city rental law into a property check.
+Start with an address.
+
+2
+00:00:07,000 --> 00:00:18,173
+Instant answers show what clearly applies, what may apply, and the key figures.
+Missing facts become clear checks, so nothing is guessed. Compare a property at a glance.
+
+3
+00:00:20,000 --> 00:00:23,384
+Every finding links to the exact sentence in its source law.
+
+4
+00:00:24,000 --> 00:00:33,108
+The map brings results into context. Compare deposits, rent increases, and pricing rules,
+then see how answers change across cities.
+
+5
+00:00:36,000 --> 00:00:42,583
+Preview New Jersey’s FAIR Act, its 1 July 2027 start date,
+and which sample addresses it reaches.
+
+6
+00:00:44,000 --> 00:00:49,483
+The law changes feed separates upcoming from proposed rules,
+with dates and affected addresses.
+
+7
+00:00:52,000 --> 00:00:59,448
+The full report organizes six rental topics with dated evidence—useful for renters,
+owners, and portfolio teams screening before a decision.
