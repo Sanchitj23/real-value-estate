@@ -46,7 +46,23 @@ export function toRuleLite(row: RuleRow): RuleLite {
   } as RuleLite;
 }
 
-export async function loadEngineInputs(): Promise<EngineInputs> {
+const CACHE_MS = 15_000;
+let cached: { at: number; value: Promise<EngineInputs> } | null = null;
+
+/**
+ * Engine inputs for the active dataset. Pages ask for these several times at once (list, map, law changes), so one
+ * load is shared for a few seconds; a failed load is never kept. Staff jobs may take up to that long to show.
+ */
+export function loadEngineInputs(): Promise<EngineInputs> {
+  if (cached && Date.now() - cached.at < CACHE_MS) return cached.value;
+  const value = readEngineInputs();
+  const entry = { at: Date.now(), value };
+  cached = entry;
+  value.catch(() => { if (cached === entry) cached = null; });
+  return value;
+}
+
+async function readEngineInputs(): Promise<EngineInputs> {
   const sb = publicClient();
   const active = await sb.from("dataset_versions").select("*").eq("status", "active").order("created_at", { ascending: false }).limit(1).maybeSingle();
   assertDb(active);

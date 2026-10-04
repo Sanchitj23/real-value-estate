@@ -6,7 +6,7 @@ import { ArrowLeft, Download, MapPin, Printer } from "lucide-react";
 import { getPropertyReport } from "@/lib/engine.functions";
 import { CATEGORIES, CATEGORY_LABEL, DEFAULT_AS_OF, DISCLAIMER } from "@/lib/engine/applicability";
 import { categorySummary, groupMissing, LIFECYCLE_LABEL, RESULT_HELP, sortOutcomes } from "@/lib/engine/plain";
-import { Pill, ResultBadge, Status, download } from "@/components/app/ui";
+import { Pill, ResultBadge, download } from "@/components/app/ui";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -110,9 +110,9 @@ function PropertyReport() {
         <div>
           <h1 className="font-serif text-3xl text-ink md:text-4xl">{p.street_address}</h1>
           <p className="mt-1 text-muted-foreground">{p.postal_city}, {p.state} {p.zip} · {p.use_description ?? "use not recorded"} · {p.units ?? "unknown number of"} units · built {p.year_built ?? "year unknown"}</p>
-          <p className="mt-2 flex items-center gap-1.5 text-sm">
-            <MapPin className="h-4 w-4 text-primary" />
-            {legalCity ? <>Legal city: <strong className="font-medium">{legalCity}</strong>{r.resolution?.county_name ? `, ${r.resolution.county_name}` : ""} <span className="text-muted-foreground">(confirmed with the US Census)</span></>
+          <p className="mt-2 flex items-start gap-1.5 text-sm">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            {legalCity ? <span>Legal city: <strong className="font-medium">{legalCity}</strong>{r.resolution?.county_name ? `, ${r.resolution.county_name}` : ""} <span className="text-muted-foreground">(confirmed with the US Census)</span></span>
               : <span className="text-st-unknown">Legal city not confirmed yet. City rules are shown as “may apply”; the mailing city isn't used as proof.</span>}
           </p>
         </div>
@@ -184,7 +184,6 @@ function PropertyReport() {
 
       <p className="text-xs text-muted-foreground">
         {DISCLAIMER} As of {r.asOf}. Based only on the legal texts supplied to this prototype; some were not available, and most rules were read automatically and not yet checked by a person.
-        {r.resolution && <> Jurisdiction check: <Status value={r.resolution.status} kind="job" /></>}
       </p>
     </div>
   );

@@ -205,7 +205,7 @@ function Admin() {
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
           <Button disabled={!isStaff || busy || !c?.properties} onClick={() => runJob(prepareAll)}>Run everything that's left</Button>
           <Button variant="outline" disabled={!busy} onClick={() => { stopRef.current = true; setStop(true); }}>Stop after the current step</Button>
-          <span className="text-xs text-muted-foreground">{partsLeft > 0 ? `Reading ${partsLeft} parts uses workspace AI credits (low-cost model).` : "Nothing left to read, so no AI credits are needed."}</span>
+          <span className="text-xs text-muted-foreground">{!plan.data ? (plan.error ? "Couldn't check how much is left to read." : "Checking how much is left to read…") : partsLeft > 0 ? `Reading ${partsLeft} parts uses workspace AI credits (low-cost model).` : "Nothing left to read, so no AI credits are needed."}</span>
         </div>
       </section>
 
