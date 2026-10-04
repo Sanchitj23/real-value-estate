@@ -232,7 +232,7 @@ export const exportSubmission = createServerFn({ method: "POST" })
     const inp = await loadEngineInputs();
     if(!inp.dataset || inp.properties.length!==500 || !inp.rules.length) throw new Error("Export unavailable: import the supplied package and extract rules first");
     const sources = await readAll(staff.from("source_documents").select("id,text,text_available,local_sha256,manifest_sha256,retrieved_at").eq("dataset_id",inp.dataset.id));
-    const runs = await readAll(staff.from("extraction_runs").select("source_id,chunk_index,chunk_count,status,pipeline_version,model,created_at").eq("pipeline_version",PIPELINE).eq("model",MODEL));
+    const runs = await readAll(staff.from("extraction_runs").select("source_id,chunk_index,chunk_count,status,pipeline_version,model,created_at").eq("pipeline_version",PIPELINE));
     assertDb(sources); assertDb(runs);
     const incomplete=(sources.data??[]).filter(s=>s.text_available && pendingChunks(s.text?.length??0,(runs.data??[]).filter(r=>r.source_id===s.id)).length);
     if(!data.diagnostic && data.kind!=="changes" && (sources.data?.length!==87 || incomplete.length)) throw new Error(`Submission blocked: ${incomplete.length} sources have unfinished extraction. Use diagnostic export while completing review.`);
