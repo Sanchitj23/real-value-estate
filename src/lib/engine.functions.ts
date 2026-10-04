@@ -178,7 +178,7 @@ async function runTests(inp: EngineInputs) {
         check.status="failed"; check.note=`Semantic mapping mismatch: ${cid} expects ${identity.city ?? identity.state+" statewide"}, but ${key} is ${mappedRule.city ?? mappedRule.state+" statewide"}. `+check.note;
       }
       if(t.type==="negative") {
-        const bad=evalAll(inp,t.as_of as string).flatMap(x=>x.outcomes.filter(o=>o.category===mappedRule.category && o.result && x.property.state===mappedRule.state && inp.rules.find(r=>r.rule_key===o.rule_key)?.legal_status!=="enacted").map(()=>x.property.address_id));
+        const bad=evalAll(inp,t.as_of as string).flatMap(x=>x.outcomes.filter(o=>o.category===mappedRule.category && (o.result==="applies"||o.result==="unknown") && x.property.state===mappedRule.state && inp.rules.find(r=>r.rule_key===o.rule_key)?.legal_status!=="enacted").map(()=>x.property.address_id));
         if(bad.length){check.status="failed";check.failed_address_ids=Array.from(new Set([...check.failed_address_ids,...bad]));check.note="Other non-enacted rules in this category still report results. "+check.note;}
       }
       if((t.conflict_with ?? []).length !== conflictCities.length && check.status!=="failed") check.status="unresolved";
