@@ -161,7 +161,7 @@ export const getExtractionPlan = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth]).handler(async ({context}) => {
     const ctx = context as unknown as Ctx; await requireStaff(ctx);
     const src = await readAll<Any>(ctx.supabase.from("source_documents").select("id,doc_id,text,dataset_versions!inner(status)").eq("dataset_versions.status","active").eq("text_available",true).order("doc_id"));
-    const runs = await readAll<Any>(ctx.supabase.from("extraction_runs").select("source_id,chunk_index,chunk_count,status,pipeline_version,model,created_at").eq("pipeline_version",PIPELINE).eq("model",MODEL));
+    const runs = await readAll<Any>(ctx.supabase.from("extraction_runs").select("source_id,chunk_index,chunk_count,status,pipeline_version,model,created_at").eq("pipeline_version",PIPELINE));
     assertDb(src); assertDb(runs);
     return ((src.data ?? []) as Array<{id:string;doc_id:string;text:string}>).map((s) => ({id:s.id as string, doc_id:s.doc_id as string, chunks:pendingChunks(s.text.length,(runs.data ?? []).filter((r: Any) => r.source_id === s.id))}));
   });
@@ -287,13 +287,13 @@ export const extractSource = createServerFn({ method: "POST" })
     const n = chunkCount(text.length);
     const chunk = chunkText(text, data.chunkIndex);
     if (!data.force) {
-      const previous = await sb.from("extraction_runs").select("id,valid,invalid,candidates,status").eq("source_id",source.id).eq("pipeline_version",PIPELINE).eq("model",MODEL).eq("chunk_count",n).eq("chunk_index",data.chunkIndex).order("created_at",{ascending:false}).limit(1).maybeSingle();
+      const previous = await sb.from("extraction_runs").select("id,valid,invalid,candidates,status").eq("source_id",source.id).eq("pipeline_version",PIPELINE).eq("chunk_count",n).eq("chunk_index",data.chunkIndex).order("created_at",{ascending:false}).limit(1).maybeSingle();
       assertDb(previous);
       if (previous.data?.status === "done") return {runId:previous.data.id as string,chunkIndex:data.chunkIndex,chunkCount:n,candidates:previous.data.candidates as number,valid:previous.data.valid as number,invalid:previous.data.invalid as number,done:data.chunkIndex+1>=n};
     }
 
     assertDb(await sb.from("extraction_runs").update({status:"error",error:"Extraction lease expired; safe to resume",finished_at:new Date().toISOString()})
-      .eq("source_id",source.id).eq("model",MODEL).eq("pipeline_version",PIPELINE).eq("chunk_index",data.chunkIndex).eq("status","running")
+      .eq("source_id",source.id).eq("pipeline_version",PIPELINE).eq("chunk_index",data.chunkIndex).eq("status","running")
       .lt("created_at",new Date(Date.now()-30*60*1000).toISOString()));
     const { data: run, error: runError } = await sb.from("extraction_runs").insert({
       source_id: source.id, model: MODEL, pipeline_version: PIPELINE, chunk_index: data.chunkIndex, chunk_count: n, created_by: ctx.userId,
