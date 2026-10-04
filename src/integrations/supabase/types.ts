@@ -374,8 +374,6 @@ export type Database = {
           citation: string
           city: string | null
           confidence: number | null
-          coverage_status: string
-          exemptions_status: string
           coverage: Json | null
           coverage_text: string | null
           created_at: string
@@ -411,8 +409,6 @@ export type Database = {
           citation: string
           city?: string | null
           confidence?: number | null
-          coverage_status?: string
-          exemptions_status?: string
           coverage?: Json | null
           coverage_text?: string | null
           created_at?: string
@@ -448,8 +444,6 @@ export type Database = {
           citation?: string
           city?: string | null
           confidence?: number | null
-          coverage_status?: string
-          exemptions_status?: string
           coverage?: Json | null
           coverage_text?: string | null
           created_at?: string
@@ -505,7 +499,6 @@ export type Database = {
       }
       scenarios: {
         Row: {
-          base_rule_id: string | null
           as_of: string
           created_at: string
           created_by: string | null
@@ -516,7 +509,6 @@ export type Database = {
           rule_key: string
         }
         Insert: {
-          base_rule_id?: string | null
           as_of?: string
           created_at?: string
           created_by?: string | null
@@ -527,7 +519,6 @@ export type Database = {
           rule_key: string
         }
         Update: {
-          base_rule_id?: string | null
           as_of?: string
           created_at?: string
           created_by?: string | null
