@@ -17,7 +17,7 @@
 ## Deploy in this order
 
 1. Confirm Lovable is connected to `Sanchitj23/real-value-estate`, branch `main`, and has pulled the latest commit. Git synchronization alone does not confirm database migration or publication.
-2. Apply **`drizzle/migrations/0002_evidence_integrity.sql`** to the existing Lovable Cloud database using its migration workflow. Keep migrations `0000` and `0001`; do not replay them on an existing database. On a fresh database apply all three in order.
+2. Check migration history first. Apply **`drizzle/migrations/0002_evidence_integrity.sql`** only if it has not already been applied to the existing Lovable Cloud database. Keep prior migrations and subsequent Lovable-generated migrations; do not replay an applied migration. On a fresh database apply the journal's migrations in order.
 3. Confirm the new `coverage_status`, `exemptions_status`, and `scenarios.base_rule_id` columns and RPCs `publish_rule_version`, `activate_dataset`, and `publish_resolution` exist. Existing database role policies remain authoritative.
 4. Confirm the existing server environment has `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `LOVABLE_API_KEY`. Never put service credentials or the AI key in `VITE_*` variables or frontend code. Census geocoding needs no API key.
 5. Open the preview and sign in as the existing project admin. In **Data & jobs**, click **Import supplied hackathon dataset**. Confirm the server receipt: **500 properties, 87 references, 54 captured texts, 33 missing/link-only texts**. An already active identical import is a no-op.
@@ -31,7 +31,7 @@
 ```text
 Use the latest main branch of Sanchitj23/real-value-estate. Read LOVABLE_DEPLOYMENT.md first. The code corrections are already implemented: do not redesign the app, replace the evaluator with chatbot responses, or seed artificial legal results.
 
-Apply the existing migration drizzle/migrations/0002_evidence_integrity.sql to this project's existing Cloud database, preserving its data and prior migrations. Verify the new columns, staff-authorized publishing/import/geography RPCs and updated RLS policies. Check actual migration results; do not claim application merely because the file exists. Confirm the existing server-side Supabase and Lovable AI configuration without exposing credentials.
+Check whether drizzle/migrations/0002_evidence_integrity.sql has already been applied to this project's existing Cloud database. Apply it only if missing, preserving data and prior migrations. Verify the new columns, staff-authorized publishing/import/geography RPCs and updated RLS policies. Check actual migration results; do not claim application merely because the file exists. Confirm the existing server-side Supabase and Lovable AI configuration without exposing credentials.
 
 Run the build, TypeScript check and tests. Use the Admin preview to import the bundled public/data/housing_law_bootstrap.json only if it is not already active. Verify 500 properties, 87 references and 54 captured texts. Do not automatically run all paid AI extraction; show the admin the source/chunk plan and workspace credit requirement first.
 
@@ -49,6 +49,8 @@ Publish the validated update to the existing hosted project. Report the actual m
 - All 54 bundled text hashes match their corresponding `local_text_sha256` values. Organizer manifest hash discrepancies remain recorded; matching local hashes does not resolve that provenance gap.
 
 These checks do not establish hosted integration, model quality or legal correctness. Production migration, AI access and published results still require checks in the actual Lovable project.
+
+Read-only hosted check on 2026-10-04: the connected database accepted queries for the new rule scope columns and pinned-scenario column (HTTP 200). Public reads returned zero active datasets, properties, sources, current rules and resolved properties. Lovable also pushed generated RPC/types updates, which were preserved by merging its commits. This confirms the new columns are available; it does not prove a successful import, model extraction, role-management action or published evaluator run.
 
 ## Scope and remaining work
 
