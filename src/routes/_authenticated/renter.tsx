@@ -18,6 +18,7 @@ export const Route = createFileRoute("/_authenticated/renter")({
       { property: "og:description", content: "Protections, missing facts and citations by address." },
     ],
   }),
+  validateSearch: (s: Record<string, unknown>): { q?: string } => (typeof s.q === "string" && s.q ? { q: s.q } : {}),
   loader: ({ context }) => context.queryClient.ensureQueryData(portfolioQ(DEFAULT_AS_OF)),
   component: Renter,
 });
@@ -25,8 +26,11 @@ export const Route = createFileRoute("/_authenticated/renter")({
 function Renter() {
   const [asOf, setAsOf] = useAsOf();
   const { data } = useSuspenseQuery(portfolioQ(asOf));
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
   const [limit,setLimit]=useState(40);
-  const [q, setQ] = useState("");
+  const q = search.q ?? "";
+  const setQ = (v: string) => navigate({ search: v ? { q: v } : {}, replace: true });
   const [picked, setPicked] = useState<string[]>([]);
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();

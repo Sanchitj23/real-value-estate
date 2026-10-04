@@ -36,18 +36,17 @@ function Dashboard() {
   return (
     <div className="space-y-8">
       <PageHeader eyebrow="Overview" title="Welcome back" />
-      <form onSubmit={(e) => { e.preventDefault(); nav({ to: "/renter", search: { q: addr } as never }); }} className="flex gap-2">
+      <form onSubmit={(e) => { e.preventDefault(); nav({ to: "/renter", search: addr ? { q: addr } : {} }); }} className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="Search an address…" className="h-11 pl-9" />
         </div>
         <Button type="submit" className="h-11">Search</Button>
       </form>
-      {empty && (
-        <div className="rounded-md border border-st-unknown/30 bg-st-unknown-bg p-4 text-sm">
-          No data loaded yet. {isStaff ? <Link to="/admin" className="font-medium underline">Upload the dataset</Link> : "An administrator needs to upload the dataset."}
-        </div>
-      )}
+      {q.isLoading && <p className="text-sm text-muted-foreground">Checking system readiness…</p>}
+      {q.isError && <div className="rounded-md border border-destructive/40 p-4 text-sm">Couldn't load the overview. <button className="underline" onClick={() => q.refetch()}>Retry</button></div>}
+      {q.data && <Readiness counts={c ?? null} isStaff={isStaff} />}
+      {empty && null}
       {c && <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Properties" value={c.properties} />
         <Stat label="Legal sources" value={c.sources} hint={`${c.captured} with text`} />
