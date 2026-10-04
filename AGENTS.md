@@ -15,6 +15,14 @@
 - Rule edits and re-extractions insert a new `rule_versions` row (is_current flip), never update in place — preserves audit trail.
 - Scenarios are patches applied in memory at evaluation time, never written to rules — hypotheticals must not overwrite law.
 - Long jobs are client-driven loops over bounded server calls (one text chunk / ten addresses) that skip finished work — resumable within Worker limits.
-- Extracted quotes must match stored source text (exact or whitespace-collapsed, offsets into stored text) or the rule is marked invalid.
+- The requirement quote, status, dates and headline value must match stored source text (exact or whitespace-collapsed) or the rule is invalid; a missing or unmatched coverage/exemption quote only leaves that scope "unknown" with a warning.
 - Public surface is only the landing (/) and /auth; all workspaces live under src/routes/_authenticated/ with a sidebar dashboard layout — app is sign-in first.
 - Imports require 500 properties and 87 references with at least the 54 baseline texts; supplemental texts arrive as a new dataset version — history stays immutable.
+- Scope has three states: checked conditions (evaluated), wording that exists but could not be checked (unknown), and no wording at all (answer given with the assumption stated in `assumptions`) — "unknown" is reserved for answers that depend on a missing fact.
+- Effective dates may be derived, always labelled: from a quoted relative clause plus the enactment date, or for a California state statute with no stated date, 1 January after enactment. Year built decides a certificate-of-occupancy cutoff except in the cutoff year.
+- `PIPELINE` in `engine/extraction.ts` versions the reading instructions; bumping it re-reads every part, and `finishSource` then retires the older automatic rules of each fully re-read source (reviewed rules are kept).
+- Geocoding uses the postal city only as a search hint (`engine/geocode.ts`); the legal city always comes from the returned Census geography.
+- The assistant (`assistant.functions.ts`) only words facts the engine produced and never decides applicability; it uses the low-cost model in `ai.server.ts`, and falls back to templated wording at no charge if the model is unavailable.
+- Assistant credits are an append-only ledger in `audit_log` (`assistant.query`, `credits.grant`, `credits.request`) read with the service role — no extra table; staff are not metered; browsing is never metered.
+- Plain-language labels live in `engine/plain.ts`; the home page is the assistant, and readiness/jobs live only on the staff Data & jobs page.
+- `src/test/pages.test.tsx` renders every signed-in page with in-memory stand-ins; keep it passing when changing a page.

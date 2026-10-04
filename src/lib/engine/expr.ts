@@ -91,6 +91,18 @@ export function evaluate(e: Expr, facts: Facts, trace: TraceNode[] = []): { resu
       return { result: "unknown", missing: [`manual_review:${e.reason}`] };
     default: {
       const v = facts[e.fact];
+      if ((v === undefined || v === null) && CERTIFICATE_FACTS.has(e.fact) && (e.operator === "lt" || e.operator === "lte" || e.operator === "gt" || e.operator === "gte")) {
+        // The assessor's year built is not a certificate date, but it settles a cutoff in every year except the
+        // cutoff year itself (challenge guide: "a building in the cutoff year should be unknown").
+        const built = facts["property.year_built"];
+        const cutoff = typeof e.value === "number" ? e.value : typeof e.value === "string" && validLegalDate(e.value) ? Number(e.value.slice(0, 4)) : null;
+        if (typeof built === "number" && cutoff !== null && built !== cutoff) {
+          const before = built < cutoff;
+          const r = e.operator === "lt" || e.operator === "lte" ? before : !before;
+          trace.push({ label: `${describe(e)} — judged from year built ${built}; only the cutoff year ${cutoff} would be uncertain`, result: r });
+          return { result: r, missing: [] };
+        }
+      }
       if (v === undefined || v === null) {
         trace.push({ label: describe(e), result: "unknown", missing: [e.fact] });
         return { result: "unknown", missing: [e.fact] };
@@ -118,5 +130,6 @@ export function evaluate(e: Expr, facts: Facts, trace: TraceNode[] = []): { resu
   }
 }
 
+const CERTIFICATE_FACTS = new Set(["property.certificate_of_occupancy_year", "property.certificate_of_occupancy_date"]);
 function norm(x: unknown) { return typeof x === "string" ? x.trim().toLowerCase() : x; }
 function uniq<T>(a: T[]) { return Array.from(new Set(a)); }

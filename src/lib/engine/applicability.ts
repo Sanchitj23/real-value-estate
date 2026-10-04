@@ -1,5 +1,5 @@
 import { evaluate, ExprSchema, type Facts, type TraceNode, FACTS } from "./expr";
-import { validLegalDate } from "./dates";
+import { deriveEffectiveDate, validLegalDate } from "./dates";
 
 export const DEFAULT_AS_OF = "2026-10-01";
 export const DISCLAIMER = "Not legal advice. Prototype using supplied public sources.";
@@ -40,6 +40,8 @@ export type RuleLite = {
   legal_status: string;
   enacted_date?: string | null;
   effective_date: string | null;
+  /** Verbatim effective-date clause from the source, when the date itself could not be read as a calendar date. */
+  effective_clause?: string | null;
   expiry_date: string | null;
   coverage: unknown;
   exemptions: unknown;
@@ -100,6 +102,8 @@ export type RuleOutcome = {
   missing: string[];
   conflict_flag: boolean;
   conflict_note: string | null;
+  /** Plain statements the answer rests on, e.g. that the source text states no exemption. */
+  assumptions: string[];
   trace: TraceNode[];
 };
 
@@ -116,7 +120,31 @@ export function cmpDate(a: string, b: string): -1 | 0 | 1 | null {
   return pa.length === pb.length ? 0 : null;
 }
 
-export function lifecycleOn(rule: Pick<RuleLite, "legal_status" | "effective_date" | "expiry_date" | "enacted_date">, asOf: string): Lifecycle {
+type Dated = Pick<RuleLite, "legal_status" | "effective_date" | "expiry_date" | "enacted_date" | "effective_clause"> & Partial<Pick<RuleLite, "state" | "level">>;
+export type DateBasis = "stated" | "clause" | "state_default" | null;
+export const DATE_BASIS_NOTE: Record<Exclude<DateBasis, null | "stated">, string> = {
+  clause: "date worked out from the law's own effective-date clause",
+  state_default: "the text gives no date, so California's general rule is used: a statute takes effect on 1 January after it is enacted",
+};
+
+/**
+ * The stated effective date, or one derived from (a) a quoted relative clause plus the enactment date, or (b) for a
+ * California state statute with an enactment date and no clause, the state's general rule (Cal. Const. art. IV, s. 8(c)):
+ * 1 January following enactment. Derived dates are always labelled.
+ */
+export function effectiveDateOf(rule: Pick<RuleLite, "effective_date" | "enacted_date" | "effective_clause"> & Partial<Pick<RuleLite, "state" | "level">>): { date: string | null; derived: boolean; basis: DateBasis } {
+  if (rule.effective_date) return { date: rule.effective_date, derived: false, basis: "stated" };
+  if (rule.effective_clause) {
+    const date = deriveEffectiveDate(rule.effective_clause, rule.enacted_date);
+    return { date, derived: !!date, basis: date ? "clause" : null };
+  }
+  if (rule.state === "CA" && rule.level === "state" && rule.enacted_date?.length === 10 && validLegalDate(rule.enacted_date)) {
+    return { date: `${Number(rule.enacted_date.slice(0, 4)) + 1}-01-01`, derived: true, basis: "state_default" };
+  }
+  return { date: null, derived: false, basis: null };
+}
+
+export function lifecycleOn(rule: Dated, asOf: string): Lifecycle {
   if (!validLegalDate(asOf)) return "unknown";
   const s = rule.legal_status;
   if (s === "failed") return "failed";
@@ -132,8 +160,11 @@ export function lifecycleOn(rule: Pick<RuleLite, "legal_status" | "effective_dat
   }
   if (s === "repealed") return "repealed";
   if (s !== "enacted") return "unknown";
-  if (!rule.effective_date) return "unknown";
-  const c = cmpDate(rule.effective_date, asOf);
+  const effective = effectiveDateOf(rule).date;
+  // Codified law whose source states no enactment or effective date is treated as in force (as the organiser's sample
+  // record does). A law with an enactment date or an unresolved effective-date clause stays unknown.
+  if (!effective) return !rule.enacted_date && !rule.effective_clause ? "in_force" : "unknown";
+  const c = cmpDate(effective, asOf);
   if (c === null) return "unknown";
   return c > 0 ? "future" : "in_force";
 }
@@ -192,17 +223,25 @@ export function evaluateProperty(
       missing.push("jurisdiction.city");
     } else parts.push(`${where}; the address is within its jurisdiction.`);
 
-    const scope = (value: unknown, status: string | undefined, confirmed: string, field: string, defaultResult: boolean) => {
+    const assumptions: string[] = [];
+    const scope = (value: unknown, status: string | undefined, text: string | null | undefined, confirmed: string, field: string, defaultResult: boolean, silent: string) => {
       if (value && status === "conditional") {
         const parsed = ExprSchema.safeParse(value);
         if (parsed.success) return evaluate(parsed.data, facts, trace);
       } else if (value == null && status === confirmed) return { result: defaultResult, missing: [] };
+      else if (value == null && (status ?? "unknown") === "unknown" && !text?.trim()) {
+        // The reader found no wording on this point at all. The answer then does not depend on a missing fact, so it
+        // is given, with the assumption stated. Wording that exists but could not be checked stays unknown below.
+        assumptions.push(silent);
+        trace.push({ label: silent, result: defaultResult });
+        return { result: defaultResult, missing: [] };
+      }
       const reason = `manual_review:${field} is not established by validated evidence`;
       trace.push({ label: reason, result: "unknown" });
       return { result: "unknown" as const, missing: [reason] };
     };
-    const cov = scope(rule.coverage, rule.coverage_status, "unconditional", "Coverage", true);
-    const exm = scope(rule.exemptions, rule.exemptions_status, "none", "Exemptions", false);
+    const cov = scope(rule.coverage, rule.coverage_status, rule.coverage_text, "unconditional", "Coverage", true, "The source text read for this rule states no property condition");
+    const exm = scope(rule.exemptions, rule.exemptions_status, rule.exemptions_text, "none", "Exemptions", false, "The source text read for this rule states no exemption");
 
     if (lifecycle === "failed" || lifecycle === "repealed") {
       applicability = "false";
@@ -218,7 +257,7 @@ export function evaluateProperty(
       if (exm.result === "unknown") { missing.push(...exm.missing); parts.push("An exemption may apply depending on facts not in the supplied data."); }
       const certain = geo === "true" && cov.result === true && exm.result === false;
       applicability = certain ? "true" : "unknown";
-      if (lifecycle === "future") { result = "not_yet_effective"; parts.push(`Enacted but not effective until ${rule.effective_date}.`); }
+      if (lifecycle === "future") { const eff = effectiveDateOf(rule); result = "not_yet_effective"; parts.push(`Enacted but not effective until ${eff.date}${eff.basis === "clause" || eff.basis === "state_default" ? ` (${DATE_BASIS_NOTE[eff.basis]})` : ""}.`); }
       else if (lifecycle === "pending") { result = "pending"; parts.push("Pending proposal — not in force."); }
       else if (lifecycle === "unknown") { result = "unknown"; parts.push("Legal status/effective date could not be established from the extracted evidence."); }
       else result = certain ? "applies" : "unknown";
@@ -228,8 +267,8 @@ export function evaluateProperty(
       rule_id: rule.id, rule_key: rule.rule_key, category: rule.category, title: rule.title,
       jurisdiction: rule.jurisdiction, level: rule.level, citation: rule.citation, key_value: rule.key_value,
       review_state: rule.review_state, lifecycle, geo, applicability, result,
-      explanation: parts.join(" ") + (missing.length ? ` Missing: ${missing.map(factLabel).join("; ")}.` : ""),
-      missing, conflict_flag: false, conflict_note: null, trace,
+      explanation: parts.join(" ") + (result && assumptions.length ? ` ${assumptions.join(". ")}.` : "") + (missing.length ? ` Missing: ${missing.map(factLabel).join("; ")}.` : ""),
+      missing, conflict_flag: false, conflict_note: null, assumptions: result ? assumptions : [], trace,
     });
   }
 

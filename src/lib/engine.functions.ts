@@ -1,10 +1,10 @@
 import { readAll } from "./db-result";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { loadEngineInputs, publicClient, type EngineInputs, assertDb } from "./data.server";
+import { loadEngineInputs, publicClient, toRuleLite, type EngineInputs, type RuleRow, assertDb } from "./data.server";
 import {
   CATEGORIES, DEFAULT_AS_OF, evaluateProperty,
-  type ExportResult, type RuleLite, type RuleOutcome, lifecycleOn, normCity,
+  type ExportResult, type RuleLite, type RuleOutcome, effectiveDateOf, lifecycleOn, normCity,
 } from "./engine/applicability";
 
 import { QueryDate } from "./engine/dates";
@@ -14,14 +14,10 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { PIPELINE, pendingChunks } from "./engine/extraction";
 import type { Json } from "@/integrations/supabase/types";
 import { checkCase } from "./engine/case-check";
+import { dateDiff, lawChangeItems } from "./engine/changes-view";
+import { summarize } from "./engine/summary";
+import { expectedIdentity } from "./engine/case-link";
 const DateStr = QueryDate;
-/** Challenge IDs encode the jurisdiction they refer to; mappings must match it independently of the mapped rule. */
-function expectedIdentity(cid: string): { state: string; city: string | null } | null {
-  const p = cid.split("-")[0];
-  const m: Record<string, { state: string; city: string | null }> = { CA: { state: "CA", city: null }, NJ: { state: "NJ", city: null }, MA: { state: "MA", city: null }, HOB: { state: "NJ", city: "Hoboken" }, JC: { state: "NJ", city: "Jersey City" } };
-  return (p && m[p]) || null;
-}
-const RANK: Record<string, number> = { applies: 4, unknown: 5, not_yet_effective: 3, pending: 2, superseded: 1 };
 
 
 function applyPatch(rules: RuleLite[], ruleKey: string, patch: Patch): RuleLite[] {
@@ -35,22 +31,6 @@ function evalAll(inp: EngineInputs, asOf: string, rules = inp.rules) {
     resolution: inp.resolutions.get(p.id) ?? null,
     outcomes: evaluateProperty(p, inp.resolutions.get(p.id) ?? null, rules, inp.relations, asOf),
   }));
-}
-
-function summarize(outcomes: RuleOutcome[]) {
-  const cats: Record<string, ExportResult | null> = {};
-  for (const c of CATEGORIES) {
-    const best = outcomes.filter((o) => o.category === c && o.result).sort((a, b) => (RANK[b.result!] ?? 0) - (RANK[a.result!] ?? 0))[0];
-    cats[c] = best?.result ?? null;
-  }
-  const mixed: Record<string, string[]> = {};
-  for (const c of CATEGORIES) mixed[c] = Array.from(new Set(outcomes.filter((o) => o.category === c && o.result).map((o) => o.result!)));
-  return {
-    categories: cats,
-    category_results: mixed,
-    unknown_count: outcomes.filter((o) => o.result === "unknown").length,
-    conflict: outcomes.some((o) => o.conflict_flag),
-  };
 }
 
 export const getOverview = createServerFn({ method: "GET" }).handler(async () => {
@@ -88,8 +68,9 @@ export const getPropertyReport = createServerFn({ method: "GET" })
     const res = inp.resolutions.get(p.id) ?? null;
     const outcomes = evaluateProperty(p, res, inp.rules, inp.relations, data.asOf);
     const ruleMap = new Map(inp.rules.map((r) => [r.id, r]));
+    const legalCity = res && res.status === "resolved" && res.place_kind === "incorporated" ? normCity(res.place_name) : null;
     const notCurrent = inp.rules
-      .filter((r) => r.state === p.state && ["failed", "repealed"].includes(lifecycleOn(r, data.asOf)))
+      .filter((r) => r.review_state !== "invalid" && r.state === p.state && (r.level === "state" || (legalCity !== null && normCity(r.city) === legalCity)) && ["failed", "repealed"].includes(lifecycleOn(r, data.asOf)))
       .map((r) => ({ title: r.title, jurisdiction: r.jurisdiction, lifecycle: lifecycleOn(r, data.asOf), citation: r.citation }));
     return {
       asOf: data.asOf,
@@ -119,6 +100,22 @@ export const getPortfolio = createServerFn({ method: "GET" })
       ...summarize(outcomes),
     }));
     return { asOf: data.asOf, rows, ruleCount: inp.rules.length };
+  });
+
+/** Plain "what is changing" list: laws starting later, proposed, recently started, struck down or no longer current. */
+export const getLawChanges = createServerFn({ method: "GET" })
+  .inputValidator((d) => z.object({ asOf: DateStr.default(DEFAULT_AS_OF) }).parse(d))
+  .handler(async ({ data }) => {
+    const inp = await loadEngineInputs();
+    return { asOf: data.asOf, sampleSize: inp.properties.length, ruleCount: inp.rules.length, items: lawChangeItems(inp, data.asOf) };
+  });
+
+/** Which results differ between two dates across the sample, grouped by rule. */
+export const getDateDiff = createServerFn({ method: "GET" })
+  .inputValidator((d) => z.object({ from: DateStr, to: DateStr }).parse(d))
+  .handler(async ({ data }) => {
+    const inp = await loadEngineInputs();
+    return { from: data.from, to: data.to, sampleSize: inp.properties.length, items: dateDiff(inp, data.from, data.to) };
   });
 
 function compareRule(inp: EngineInputs, ruleKey: string, asA: string, rulesA: RuleLite[], asB: string, rulesB: RuleLite[]) {
@@ -178,8 +175,9 @@ async function runTests(inp: EngineInputs) {
         check.status="failed"; check.note=`Semantic mapping mismatch: ${cid} expects ${identity.city ?? identity.state+" statewide"}, but ${key} is ${mappedRule.city ?? mappedRule.state+" statewide"}. `+check.note;
       }
       if(t.type==="negative") {
-        const bad=evalAll(inp,t.as_of as string).flatMap(x=>x.outcomes.filter(o=>o.category===mappedRule.category && (o.result==="applies"||o.result==="unknown") && x.property.state===mappedRule.state && inp.rules.find(r=>r.rule_key===o.rule_key)?.legal_status!=="enacted").map(()=>x.property.address_id));
-        if(bad.length){check.status="failed";check.failed_address_ids=Array.from(new Set([...check.failed_address_ids,...bad]));check.note="Other non-enacted rules in this category still report results. "+check.note;}
+        // A negative case means nothing in this topic may be reported for the state on that date, whatever its status.
+        const bad=evalAll(inp,t.as_of as string).flatMap(x=>x.outcomes.filter(o=>o.rule_key!==key && o.category===mappedRule.category && (o.result==="applies"||o.result==="unknown") && x.property.state===mappedRule.state).map(()=>x.property.address_id));
+        if(bad.length){check.status="failed";check.failed_address_ids=Array.from(new Set([...check.failed_address_ids,...bad]));check.note="Other rules in this topic still report a result for these addresses. "+check.note;}
       }
       if((t.conflict_with ?? []).length !== conflictCities.length && check.status!=="failed") check.status="unresolved";
       return { challenge_id: cid, rule_key: key, rows, summary: bucket(rows), check };
@@ -211,11 +209,11 @@ export const runScenario = createServerFn({ method: "POST" })
     const found = await sb.from("scenarios").select("*").eq("id", data.scenarioId).single();
     assertDb(found); const sc=found.data;
     if (!sc) throw new Error("Scenario not found");
-    const selected = sc.base_rule_id ? await sb.from("rule_versions").select("*,source_documents(doc_id)").eq("id",sc.base_rule_id).single() : null;
+    const selected = sc.base_rule_id ? await sb.from("rule_versions").select("*,source_documents(doc_id,retrieved_at),rule_evidence(field,quote,valid)").eq("id",sc.base_rule_id).single() : null;
     if(selected) assertDb(selected);
     if(!selected?.data) throw new Error("Legacy scenario has no frozen base version; recreate it");
     const inp = await loadEngineInputs();
-    const baseRules=inp.rules.map(r=>r.rule_key===sc.rule_key?{...selected.data,source_doc_id:selected.data.source_documents?.doc_id} as RuleLite:r);
+    const baseRules=inp.rules.map(r=>r.rule_key===sc.rule_key?toRuleLite(selected.data as unknown as RuleRow):r);
     if(!baseRules.some(r=>r.rule_key===sc.rule_key)) throw new Error("Scenario belongs to a different dataset");
     const patched = applyPatch(baseRules, sc.rule_key, PatchSchema.parse(sc.patch));
     const rows = compareRule(inp, sc.rule_key, sc.as_of, baseRules, sc.as_of, patched);
@@ -268,7 +266,7 @@ export const exportSubmission = createServerFn({ method: "POST" })
             exemptions: r.exemptions ? JSON.stringify(r.exemptions) : r.exemptions_text ?? (r.exemptions_status === "none" ? null : "Exemptions not established; human review required"),
             overrides: rels.filter(x=>x.from_rule_key===r.rule_key && ["replaces","stricter-local-standard"].includes(x.relation_type)).map(x=>x.to_rule_key),
             interaction: rels.map((x) => `${x.from_rule_key} ${x.relation_type} ${x.to_rule_key}`).join("; ") || null,
-            effective_date: r.effective_date, citation: r.citation, source_doc_id: r.source_doc_id ?? null,
+            effective_date: effectiveDateOf(r).date, citation: r.citation, source_doc_id: r.source_doc_id ?? null,
             source_url: r.source_url ?? "", quoted_span: r.quoted_span, confidence: r.confidence,
             conflict_flag: rels.some((x) => x.relation_type === "possible-preemption" || x.relation_type === "unresolved-conflict"),
             conflict_note: null,

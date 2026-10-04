@@ -1,4 +1,5 @@
-export const PIPELINE = "extract-v2-evidence";
+/** Bump when the reading instructions change: every part is then read again and older automatic rules are retired per source. */
+export const PIPELINE = "extract-v3-scope";
 export const MODEL = "openai/gpt-6-luna";
 const CHUNK = 40000, OVERLAP = 1500;
 export function chunkCount(len: number) { return Math.max(1, Math.ceil((len - OVERLAP) / (CHUNK - OVERLAP))); }

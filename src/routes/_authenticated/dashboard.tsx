@@ -1,10 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
-import { ArrowRight, Search } from "lucide-react";
+import { ArrowRight, CalendarClock, Map, Search } from "lucide-react";
 import { getOverview } from "@/lib/engine.functions";
-import { PageHeader, Stat } from "@/components/app/ui";
+import { Assistant } from "@/components/app/Assistant";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,91 +11,76 @@ import { useAuth } from "@/hooks/useAuth";
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
     meta: [
-      { title: "Dashboard — Housing Law Navigator" },
-      { name: "description", content: "Your overview of rental-housing rules, properties and pending reviews." },
-      { property: "og:title", content: "Dashboard — Housing Law Navigator" },
-      { property: "og:description", content: "Overview of rules, properties and reviews." },
+      { title: "Ask — Housing Law Navigator" },
+      { name: "description", content: "Ask which rental rules apply at a sample address, what is changing, and see the legal text behind every answer." },
+      { property: "og:title", content: "Ask — Housing Law Navigator" },
+      { property: "og:description", content: "Plain-language answers about rental rules, with sources." },
     ],
   }),
   component: Dashboard,
 });
 
+const STEPS = [
+  { n: "1", t: "We read the law", b: "State and city rental laws are read from official texts. Every rule keeps the exact sentence it came from." },
+  { n: "2", t: "We place the address", b: "The legal city is confirmed with the US Census, because a mailing city is not always the legal one." },
+  { n: "3", t: "You get a straight answer", b: "Applies, may apply, starts later or proposed. When a fact is missing we say which one, instead of guessing." },
+];
+
 function Dashboard() {
   const { isStaff } = useAuth();
-  const q = useQuery({ queryKey: ["overview"], queryFn: () => getOverview() });
+  const q = useQuery({ queryKey: ["overview"], queryFn: () => getOverview(), throwOnError: false });
   const c = q.data?.counts;
   const [addr, setAddr] = useState("");
   const nav = useNavigate();
-  const empty = c && c.properties === 0;
   const cards = [
-    { to: "/renter" as const, t: "Look up an address", b: "See which protections apply, why, and what's still unknown." },
-    { to: "/manager" as const, t: "Review your portfolio", b: "Obligations and open questions across all properties." },
-    { to: "/changes" as const, t: "See what a law change affects", b: "Before/after comparison and affected properties." },
+    { to: "/renter" as const, icon: Search, t: "Find a property", b: "Pick one of the 500 sample addresses and read its rules in plain words." },
+    { to: "/changes" as const, icon: CalendarClock, t: "See what's changing", b: "New, upcoming and proposed laws, and which addresses each one reaches." },
+    { to: "/map" as const, icon: Map, t: "Explore the map", b: "City outlines and addresses, coloured by the topic or law you choose." },
   ];
   return (
     <div className="space-y-8">
-      <PageHeader eyebrow="Overview" title="Welcome back" />
-      <form onSubmit={(e) => { e.preventDefault(); nav({ to: "/renter", search: addr ? { q: addr } : {} }); }} className="flex gap-2">
-        <div className="relative flex-1">
+      <header>
+        <h1 className="font-serif text-3xl text-ink md:text-4xl">What do you want to know about a rental?</h1>
+        <p className="mt-2 max-w-2xl text-muted-foreground">Ask in your own words. You'll get the rules that apply or may apply, what they require, and the legal text behind them.</p>
+      </header>
+
+      <Assistant />
+
+      <form onSubmit={(e) => { e.preventDefault(); nav({ to: "/renter", search: addr ? { q: addr } : {} }); }} className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-muted-foreground">Or go straight to an address:</span>
+        <div className="relative min-w-56 flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="Search an address…" className="h-11 pl-9" />
+          <Input value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="Street, city, ZIP or sample ID" aria-label="Search an address" className="h-10 pl-9" />
         </div>
-        <Button type="submit" className="h-11">Search</Button>
+        <Button type="submit" variant="outline" className="h-10">Search</Button>
       </form>
-      {q.isLoading && <p className="text-sm text-muted-foreground">Checking system readiness…</p>}
-      {q.isError && <div className="rounded-md border border-destructive/40 p-4 text-sm">Couldn't load the overview. <button className="underline" onClick={() => q.refetch()}>Retry</button></div>}
-      {q.data && <Readiness counts={c ?? null} isStaff={isStaff} />}
-      {empty && null}
-      {c && <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Properties" value={c.properties} />
-        <Stat label="Legal sources" value={c.sources} hint={`${c.captured} with text`} />
-        <Stat label="Rules" value={c.rules} hint={`${c.invalid} invalid`} />
-        <Stat label="Addresses placed" value={c.resolved} />
-      </div>}
+
       <div className="grid gap-4 md:grid-cols-3">
-        {cards.map((x) => (
-          <Link key={x.to} to={x.to} className="group rounded-md border border-border bg-card p-5 transition-colors hover:border-primary">
-            <div className="font-medium text-foreground">{x.t}</div>
-            <p className="mt-1 text-sm text-muted-foreground">{x.b}</p>
+        {cards.map(({ to, icon: Icon, t, b }) => (
+          <Link key={to} to={to} className="group rounded-lg border border-border bg-card p-5 transition-colors hover:border-primary">
+            <Icon className="h-5 w-5 text-primary" />
+            <div className="mt-3 font-medium text-foreground">{t}</div>
+            <p className="mt-1 text-sm text-muted-foreground">{b}</p>
             <ArrowRight className="mt-4 h-4 w-4 text-primary transition-transform group-hover:translate-x-1" />
           </Link>
         ))}
       </div>
-    </div>
-  );
-}
 
-type Counts = { properties: number; sources: number; captured: number; rules: number; reviewed: number; invalid: number; geocoded: number; resolved: number };
-
-function Readiness({ counts, isStaff }: { counts: Counts | null; isStaff: boolean }) {
-  const steps = [
-    { label: "Dataset imported", ok: !!counts && counts.properties > 0, detail: counts ? `${counts.properties} addresses, ${counts.sources} sources (${counts.captured} with text)` : "No active dataset" },
-    { label: "Rules read from legal texts", ok: !!counts && counts.rules > 0, detail: counts ? `${counts.rules} rules${counts.invalid ? `, ${counts.invalid} rejected` : ""}` : "—" },
-    { label: "Addresses placed in cities", ok: !!counts && counts.properties > 0 && counts.geocoded >= counts.properties, detail: counts ? `${counts.geocoded} of ${counts.properties} checked, ${counts.resolved} placed` : "—" },
-    { label: "Rules reviewed by a person", ok: !!counts && counts.reviewed > 0, detail: counts ? `${counts.reviewed} reviewed` : "—" },
-  ];
-  const next = steps.find((s) => !s.ok);
-  return (
-    <div className="rounded-md border border-border bg-card p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="font-medium">System readiness</div>
-        <span className={next ? "text-sm text-st-unknown" : "text-sm text-primary"}>{next ? "Preparing" : "Ready"}</span>
-      </div>
-      <ol className="space-y-2 text-sm">
-        {steps.map((s) => (
-          <li key={s.label} className="flex items-start gap-2">
-            <span className={s.ok ? "text-primary" : "text-muted-foreground"}>{s.ok ? "✓" : "○"}</span>
-            <span className="flex-1">{s.label}<span className="block text-xs text-muted-foreground">{s.detail}</span></span>
-          </li>
-        ))}
-      </ol>
-      {next && (
-        <p className="mt-4 text-sm">
-          {isStaff
-            ? <>Next step: <Link to="/admin" className="font-medium underline">{next.label.toLowerCase()} on Data &amp; jobs</Link></>
-            : "The legal data is still being prepared. Results may show as unknown until preparation finishes."}
-        </p>
-      )}
+      <section className="rounded-lg border border-border bg-card p-5 md:p-6">
+        <h2 className="font-serif text-xl text-ink">How it works</h2>
+        <ol className="mt-4 grid gap-5 md:grid-cols-3">
+          {STEPS.map((s) => (
+            <li key={s.n} className="flex gap-3">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-medium text-primary-foreground">{s.n}</span>
+              <span><span className="block font-medium text-foreground">{s.t}</span><span className="mt-0.5 block text-sm text-muted-foreground">{s.b}</span></span>
+            </li>
+          ))}
+        </ol>
+        {c && <p className="mt-5 border-t border-border pt-4 text-sm text-muted-foreground">
+          Right now: {c.properties} sample addresses in California, New Jersey and Massachusetts · {c.rules} rules read from {c.captured} legal texts · {c.resolved} addresses with a confirmed legal city.
+          {isStaff && <> <Link to="/admin" className="font-medium text-primary underline">Data status and jobs</Link></>}
+        </p>}
+      </section>
     </div>
   );
 }

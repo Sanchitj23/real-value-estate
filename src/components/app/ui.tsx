@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { DISCLAIMER, DEFAULT_AS_OF } from "@/lib/engine/applicability";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { LIFECYCLE_LABEL, RESULT_LABEL, RESULT_TONE, type Tone } from "@/lib/engine/plain";
 
 const STATUS_STYLE: Record<string, string> = {
   applies: "bg-st-applies-bg text-st-applies border-st-applies/30",
@@ -48,6 +49,54 @@ export function Status({ value, className, kind }: { value: string | null | unde
       {value ? (kind ? KIND_PREFIX[kind] : "") + (STATUS_LABEL[v] ?? v.replace(/_/g, " ")) : "—"}
     </span>
   );
+}
+
+export const TONE_CLASS: Record<Tone, string> = {
+  applies: "bg-st-applies-bg text-st-applies border-st-applies/30",
+  unknown: "bg-st-unknown-bg text-st-unknown border-st-unknown/30",
+  future: "bg-st-future-bg text-st-future border-st-future/30",
+  pending: "bg-st-pending-bg text-st-pending border-st-pending/30",
+  superseded: "bg-st-superseded-bg text-st-superseded border-st-superseded/30",
+  none: "bg-muted text-muted-foreground border-border",
+};
+export const TONE_COLOR: Record<Tone, string> = {
+  applies: "var(--st-applies)", unknown: "var(--st-unknown)", future: "var(--st-future)", pending: "var(--st-pending)",
+  superseded: "var(--st-superseded)", none: "var(--muted-foreground)",
+};
+
+/** Sentence-case pill for anything a normal user reads. */
+export function Pill({ tone, children, className }: { tone: Tone; children: ReactNode; className?: string | undefined }) {
+  return <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap", TONE_CLASS[tone], className)}>{children}</span>;
+}
+
+/** Engine result in plain words: Applies / May apply / Starts later / Proposed. */
+export function ResultBadge({ value, className }: { value: string | null | undefined; className?: string | undefined }) {
+  return <Pill tone={value ? RESULT_TONE[value] ?? "none" : "none"} className={className}>{value ? RESULT_LABEL[value] ?? value.replace(/_/g, " ") : "No rule found"}</Pill>;
+}
+
+const LIFECYCLE_TONE: Record<string, Tone> = { in_force: "applies", future: "future", pending: "pending", failed: "superseded", repealed: "superseded", unknown: "unknown" };
+export function LifecycleBadge({ value }: { value: string }) {
+  return <Pill tone={LIFECYCLE_TONE[value] ?? "none"}>{LIFECYCLE_LABEL[value] ?? value}</Pill>;
+}
+
+/** Minimal formatter for assistant answers: paragraphs, "- " bullets, **bold**, and [D041] source links. */
+export function RichText({ text }: { text: string }) {
+  const inline = (s: string, key: string) => s.split(/(\*\*[^*]+\*\*|\[D\d{3}\])/g).map((part, i) => {
+    if (/^\*\*[^*]+\*\*$/.test(part)) return <strong key={`${key}-${i}`} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>;
+    const doc = part.match(/^\[(D\d{3})\]$/);
+    if (doc) return <Link key={`${key}-${i}`} to="/sources/$docId" params={{ docId: doc[1]! }} className="mx-0.5 rounded-sm bg-muted px-1 font-mono text-[0.7rem] text-primary hover:underline">{doc[1]}</Link>;
+    return <span key={`${key}-${i}`}>{part}</span>;
+  });
+  const blocks: ReactNode[] = [];
+  let bullets: string[] = [];
+  const flush = () => { if (bullets.length) { const items = bullets; blocks.push(<ul key={`u${blocks.length}`} className="ml-4 list-disc space-y-1">{items.map((b, i) => <li key={i}>{inline(b, `b${blocks.length}-${i}`)}</li>)}</ul>); bullets = []; } };
+  text.split(/\r?\n/).forEach((raw) => {
+    const line = raw.trim();
+    if (/^[-•*]\s+/.test(line)) bullets.push(line.replace(/^[-•*]\s+/, ""));
+    else { flush(); if (line) blocks.push(<p key={`p${blocks.length}`}>{inline(line, `p${blocks.length}`)}</p>); }
+  });
+  flush();
+  return <div className="space-y-2 text-sm leading-relaxed">{blocks}</div>;
 }
 
 export function Disclaimer({ asOf = DEFAULT_AS_OF, extra }: { asOf?: string; extra?: ReactNode }) {

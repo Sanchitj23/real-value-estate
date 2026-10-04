@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { getMonitoring, listUsers, setUserRole } from "@/lib/console.functions";
+import { grantCredits } from "@/lib/assistant.functions";
 import { PageHeader, Stat } from "@/components/app/ui";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -119,24 +120,32 @@ function Monitoring() {
 
 function Users() {
   const qc = useQueryClient();
-  const fList = useServerFn(listUsers), fSet = useServerFn(setUserRole);
+  const fList = useServerFn(listUsers), fSet = useServerFn(setUserRole), fGrant = useServerFn(grantCredits);
   const q = useQuery({ queryKey: ["users"], queryFn: () => fList() });
   async function toggle(userId: string, role: "admin" | "reviewer", grant: boolean) {
     try { await fSet({ data: { userId, role, grant } }); toast.success(`${grant ? "Granted" : "Removed"} ${role}`); qc.invalidateQueries({ queryKey: ["users"] }); }
     catch (e) { toast.error((e as Error).message); }
   }
+  async function grant(userId: string, amount: number) {
+    try { await fGrant({ data: { userId, amount } }); toast.success(`Added ${amount} assistant credits`); qc.invalidateQueries({ queryKey: ["users"] }); }
+    catch (e) { toast.error((e as Error).message); }
+  }
   return (
     <section className="paper rounded-sm p-5">
-      <p className="mb-3 text-sm text-muted-foreground">Reviewers can edit rules, mappings and scenarios. Admins can also import data, run jobs and manage users. New sign-ups start as regular users.</p>
+      <p className="mb-3 text-sm text-muted-foreground">Reviewers can edit rules, mappings and scenarios. Admins can also import data, run jobs and manage users. New sign-ups start as regular users with 2 free assistant questions; add credits here for people who ask for more.</p>
       {q.error && <p className="text-sm text-destructive">{(q.error as Error).message}</p>}
       <table className="w-full text-sm">
-        <thead className="text-left text-muted-foreground"><tr><th>Email</th><th>Roles</th><th>Joined</th><th>Last sign-in</th><th></th></tr></thead>
+        <thead className="text-left text-muted-foreground"><tr><th>Email</th><th>Roles</th><th>Assistant credits</th><th>Joined</th><th>Last sign-in</th><th></th></tr></thead>
         <tbody>{(q.data ?? []).map((u) => {
           const isRev = u.roles.includes("reviewer"), isAdm = u.roles.includes("admin");
           return (
             <tr key={u.id} className="border-t border-border">
               <td className="py-2">{u.email}{u.isSelf && " (you)"}{!u.confirmed && <span className="ml-1 text-xs text-st-unknown">unconfirmed</span>}</td>
               <td className="font-mono text-xs">{u.roles.join(", ") || "user"}</td>
+              <td className="text-xs">
+                {u.credits.unlimited ? "unlimited (staff)" : <>{u.credits.remaining} left <span className="text-muted-foreground">· {u.credits.used} used</span>{u.credits.requested && <span className="ml-1 rounded-sm bg-st-unknown-bg px-1 text-st-unknown">asked for more</span>}</>}
+                {!u.credits.unlimited && <span className="ml-2 space-x-1"><button className="underline" onClick={() => grant(u.id, 10)}>+10</button><button className="underline" onClick={() => grant(u.id, 50)}>+50</button></span>}
+              </td>
               <td className="text-xs">{fmt(u.created_at)}</td><td className="text-xs">{fmt(u.last_sign_in_at)}</td>
               <td className="space-x-2 text-right">
                 <Button size="sm" variant="outline" onClick={() => toggle(u.id, "reviewer", !isRev)}>{isRev ? "Remove reviewer" : "Make reviewer"}</Button>

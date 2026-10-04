@@ -1,11 +1,14 @@
 import { useAsOf } from "@/hooks/useAsOf";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { queryOptions, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { ArrowLeft, Download, MapPin, Printer } from "lucide-react";
 import { getPropertyReport } from "@/lib/engine.functions";
-import { CATEGORIES, CATEGORY_LABEL, DEFAULT_AS_OF, factLabelOf } from "@/lib/engine/applicability";
-import { Disclaimer, PageHeader, Status, download } from "@/components/app/ui";
+import { CATEGORIES, CATEGORY_LABEL, DEFAULT_AS_OF, DISCLAIMER } from "@/lib/engine/applicability";
+import { categorySummary, groupMissing, LIFECYCLE_LABEL, RESULT_HELP, sortOutcomes } from "@/lib/engine/plain";
+import { Pill, ResultBadge, Status, download } from "@/components/app/ui";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
-import { FACTS, type FactKey } from "@/lib/engine/expr";
 import { Button } from "@/components/ui/button";
 
 const reportQ = (addressId: string, asOf: string) =>
@@ -22,108 +25,167 @@ export const Route = createFileRoute("/_authenticated/property/$addressId")({
     return {
       meta: [
         { title: t },
-        { name: "description", content: "Cited rental-housing rule applicability, missing facts and source quotes for this sample property." },
+        { name: "description", content: "Rental rules that apply or may apply at this sample property, with what is still unknown and the legal text behind each rule." },
         { property: "og:title", content: t },
-        { property: "og:description", content: "Cited, date-aware rental rule applicability report." },
+        { property: "og:description", content: "Plain-language rental rules report with sources." },
       ],
     };
   },
-  notFoundComponent: () => <p>Property not found in the imported sample.</p>,
+  notFoundComponent: () => <p>That address isn't in the 500-property sample. That doesn't mean no law applies there.</p>,
   component: PropertyReport,
 });
+
+type Report = NonNullable<Awaited<ReturnType<typeof getPropertyReport>>>;
+type Outcome = Report["outcomes"][number];
+
+function RuleRow({ o }: { o: Outcome }) {
+  const need = groupMissing(o.missing);
+  const toCheck = [...need.facts, ...need.checks];
+  const why = o.explanation.split(" Missing: ")[0];
+  return (
+    <article className="rounded-md border border-border bg-background p-4">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+        <h3 className="min-w-0 flex-1 font-sans text-base font-medium text-foreground">{o.title}</h3>
+        <span className="flex items-center gap-1.5">{o.conflict_flag && <Pill tone="superseded" className="border-st-conflict/30 bg-st-conflict-bg text-st-conflict">Conflict flagged</Pill>}<ResultBadge value={o.result} /></span>
+      </div>
+      {o.key_value && <div className="mt-1 font-serif text-lg leading-snug text-ink">{o.key_value}</div>}
+      <p className="mt-1 text-sm text-muted-foreground">{o.requirement}</p>
+      {o.result === "unknown" && toCheck.length > 0 && (
+        <p className="mt-2 text-sm"><span className="font-medium text-st-unknown">To be sure, check: </span>{toCheck.slice(0, 2).join(" · ")}{toCheck.length > 2 && <span className="text-muted-foreground"> · and {toCheck.length - 2} more</span>}</p>
+      )}
+      {o.conflict_note && <p className="mt-2 text-sm text-st-conflict">{o.conflict_note}</p>}
+      <details className="mt-2 text-sm">
+        <summary className="cursor-pointer text-primary hover:underline">Why, and the legal text</summary>
+        <div className="mt-2 space-y-2 border-l-2 border-border pl-3">
+          <p className="text-muted-foreground">{why}</p>
+          {toCheck.length > 2 && <ul className="ml-4 list-disc text-muted-foreground">{toCheck.slice(2).map((m) => <li key={m}>{m}</li>)}</ul>}
+          {need.generic.map((g) => <p key={g} className="text-muted-foreground">{g}.</p>)}
+          {o.quoted_span && <blockquote className="rounded-sm bg-muted/60 px-3 py-2 source-text">“{o.quoted_span}”</blockquote>}
+          <p className="text-xs text-muted-foreground">
+            {o.jurisdiction} · {o.citation} · {LIFECYCLE_LABEL[o.lifecycle] ?? o.lifecycle} · {o.review_state === "reviewed" ? "checked by a reviewer" : "read automatically, not yet checked by a person"}
+            {o.retrieved_at && ` · source retrieved ${o.retrieved_at.slice(0, 10)}`}
+          </p>
+          <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+            {o.source_doc_id && <Link to="/sources/$docId" params={{ docId: o.source_doc_id }} className="text-primary underline">Stored source text ({o.source_doc_id})</Link>}
+            {o.source_url && <a href={o.source_url} target="_blank" rel="noopener noreferrer" className="text-primary underline">Official page</a>}
+            <Link to="/rules/$id" params={{ id: o.rule_id }} className="text-primary underline">Rule details and history</Link>
+          </p>
+          {o.trace.length > 0 && <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Condition check (technical)</summary><ul className="mt-1">{o.trace.map((t, i) => <li key={i}>{t.label}: {String(t.result)}</li>)}</ul></details>}
+        </div>
+      </details>
+    </article>
+  );
+}
+
+function CategorySection({ list }: { list: Outcome[] }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? list : list.slice(0, 3);
+  return (
+    <div className="space-y-3">
+      {shown.map((o) => <RuleRow key={o.rule_id} o={o} />)}
+      {list.length > 3 && <button className="text-sm font-medium text-primary underline print:hidden" onClick={() => setAll((v) => !v)}>{all ? "Show fewer" : `Show all ${list.length} rules`}</button>}
+    </div>
+  );
+}
 
 function PropertyReport() {
   const { addressId } = Route.useParams();
   const [asOf, setAsOf] = useAsOf();
-  const { data: r, isFetching, error } = useQuery({ ...reportQ(addressId, asOf),  });
-  if(error) return <p role="alert">{error.message}</p>;
-  if (!r) return <p>Loading…</p>;
+  const { data: r, isFetching, error, refetch } = useQuery({ ...reportQ(addressId, asOf), throwOnError: false });
+  if (error) return <div role="alert" className="rounded-md border border-destructive/40 p-4 text-sm">The report couldn't be loaded ({error.message}). <button className="underline" onClick={() => refetch()}>Try again</button></div>;
+  if (!r) return <p className="text-muted-foreground">Loading the report…</p>;
   const p = r.property;
-  const allMissing = Array.from(new Set(r.outcomes.flatMap((o) => o.missing)));
+  const outs = r.outcomes.filter((o) => o.result);
+  const cats = CATEGORIES.map((cat) => { const list = sortOutcomes(outs.filter((o) => o.category === cat)); return { cat, list, summary: categorySummary(list.map((o) => o.result)) }; });
+  const overall = categorySummary(outs.map((o) => o.result));
+  const need = groupMissing(outs.flatMap((o) => o.missing));
+  const placed = r.resolution?.status === "resolved";
+  const legalCity = placed ? r.resolution?.place_name ?? "outside any incorporated city" : null;
+  const firstOpen = cats.filter((c) => c.list.length).slice(0, 1).map((c) => c.cat);
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow={`Property report · ${p.address_id}`} title={p.street_address}>
-        {p.postal_city} (postal), {p.state} {p.zip} · {p.use_description ?? "use unknown"} · built {p.year_built ?? "unknown"} · {p.units ?? "unknown"} units
-      </PageHeader>
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="text-sm">
-          <div className="eyebrow mb-1">As-of date</div>
-          <Input type="date" value={asOf} onChange={(e) => e.target.value && setAsOf(e.target.value)} className="w-44" />
-        </label>
-        <Button variant="outline" onClick={() => download(`report-${p.address_id}-${asOf}.json`, { disclaimer: "Not legal advice. Prototype using supplied public sources.", ...r })}>Export report (JSON)</Button>
-        {isFetching && <span className="text-xs text-muted-foreground">Re-evaluating…</span>}
-      </div>
-      <Disclaimer asOf={r.asOf} />
+      <Link to="/renter" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground print:hidden"><ArrowLeft className="h-3.5 w-3.5" />All properties</Link>
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-5">
+        <div>
+          <h1 className="font-serif text-3xl text-ink md:text-4xl">{p.street_address}</h1>
+          <p className="mt-1 text-muted-foreground">{p.postal_city}, {p.state} {p.zip} · {p.use_description ?? "use not recorded"} · {p.units ?? "unknown number of"} units · built {p.year_built ?? "year unknown"}</p>
+          <p className="mt-2 flex items-center gap-1.5 text-sm">
+            <MapPin className="h-4 w-4 text-primary" />
+            {legalCity ? <>Legal city: <strong className="font-medium">{legalCity}</strong>{r.resolution?.county_name ? `, ${r.resolution.county_name}` : ""} <span className="text-muted-foreground">(confirmed with the US Census)</span></>
+              : <span className="text-st-unknown">Legal city not confirmed yet. City rules are shown as “may apply”; the mailing city isn't used as proof.</span>}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2 print:hidden">
+          <label className="text-xs text-muted-foreground">Rules as of
+            <Input type="date" value={asOf} onChange={(e) => e.target.value && setAsOf(e.target.value)} className="mt-1 w-40" />
+          </label>
+          <Button variant="outline" onClick={() => window.print()}><Printer className="h-4 w-4" />Print</Button>
+          <Button variant="outline" onClick={() => download(`report-${p.address_id}-${asOf}.json`, { disclaimer: DISCLAIMER, ...r })}><Download className="h-4 w-4" />Data</Button>
+        </div>
+      </header>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <div className="paper rounded-sm p-4 text-sm">
-          <div className="eyebrow mb-2">Jurisdiction evidence</div>
-          {r.resolution ? (
-            <>
-              <Status value={r.resolution.status} />
-              <dl className="mt-2 space-y-1">
-                <div><dt className="inline text-muted-foreground">Legal place: </dt><dd className="inline">{r.resolution.place_name ?? "—"} <span className="text-xs text-muted-foreground">({r.resolution.place_kind})</span></dd></div>
-                <div><dt className="inline text-muted-foreground">County: </dt><dd className="inline">{r.resolution.county_name ?? "—"}</dd></div>
-                <div><dt className="inline text-muted-foreground">Provider: </dt><dd className="inline">US Census Geocoder</dd></div>
-              </dl>
-            </>
-          ) : <p className="text-muted-foreground">Not resolved. Local rules are reported as unknown; postal city is not used as legal jurisdiction.</p>}
+      <section aria-label="At a glance">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-serif text-xl text-ink">At a glance <span className="font-sans text-sm text-muted-foreground">· as of {r.asOf}{isFetching ? " · updating…" : ""}</span></h2>
+          <p className="text-sm text-muted-foreground">{outs.length ? overall.parts.join(" · ") : "No rules to show yet"}</p>
         </div>
-        <div className="paper rounded-sm p-4 text-sm md:col-span-2">
-          <div className="eyebrow mb-2">What must be established before acting ({allMissing.length})</div>
-          {allMissing.length ? (
-            <ul className="grid gap-1 sm:grid-cols-2">{allMissing.map((m) => <li key={m}>• {factLabelOf(m)}{FACTS[m as FactKey]?.question && <p className="text-xs text-muted-foreground">{FACTS[m as FactKey].question}</p>}</li>)}</ul>
-          ) : r.outcomes.length === 0
-            ? <p className="text-st-unknown">Analysis not available yet: no rules have been extracted for this address's jurisdictions, or the address hasn't been placed. This is not a sign that no law applies.</p>
-            : <p className="text-muted-foreground">No missing facts on the {r.outcomes.length} evaluated rules.</p>}
-          <p className="mt-2 text-xs text-muted-foreground">Missing facts are treated as unknown, never false. Year built is not a certificate-of-occupancy date.</p>
-        </div>
+        {r.ruleCount === 0
+          ? <p className="rounded-md border border-st-unknown/30 bg-st-unknown-bg/60 p-4 text-sm">The legal texts haven't been read yet, so there is nothing to report. This is a preparation step, not a sign that no law applies here.</p>
+          : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {cats.map(({ cat, list, summary }) => (
+              <a key={cat} href={`#${cat}`} className="rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/60">
+                <div className="flex items-start justify-between gap-2"><span className="font-medium text-foreground">{CATEGORY_LABEL[cat]}</span><Pill tone={summary.tone}>{summary.headline}</Pill></div>
+                <p className="mt-2 text-sm text-muted-foreground">{list.find((o) => o.key_value)?.key_value ?? list[0]?.title ?? "Nothing in the legal texts we have covers this topic here."}</p>
+                {summary.parts.length > 1 && <p className="mt-1 text-xs text-muted-foreground">{summary.parts.slice(1).join(" · ")}</p>}
+              </a>
+            ))}
+          </div>}
       </section>
 
-      {r.ruleCount === 0 && <p className="text-sm text-st-unknown">No extracted rules exist yet; nothing can be reported. Absence of a rule is “coverage not established”, not a legal negative.</p>}
-
-      {CATEGORIES.map((cat) => {
-        const outs = r.outcomes.filter((o) => o.category === cat && o.result);
-        return (
-          <section key={cat}>
-            <h2 className="mb-2 flex items-center gap-3 text-2xl">{CATEGORY_LABEL[cat]} {(r.summary.category_results?.[cat] ?? []).map((x: string) => <Status key={x} value={x} />)}</h2>
-            {outs.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Coverage not established from the supplied, extracted sources.</p>
-            ) : (
-              <div className="space-y-3">
-                {outs.map((o) => (
-                  <article key={o.rule_id} className="paper rounded-sm p-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Status value={o.result} />
-                      <Status value={o.lifecycle} />
-                      <Status value={o.review_state} kind="review" />
-                      {o.conflict_flag && <Status value="conflict" />}
-                      <Link to="/rules/$id" params={{ id: o.rule_id }} className="font-serif text-lg text-ink hover:underline">{o.title}</Link>
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">{o.jurisdiction} · {o.citation}{o.key_value ? ` · ${o.key_value}` : ""}</div>
-                    <p className="mt-2 text-sm">{o.requirement}</p>
-                    <p className="mt-2 text-sm text-muted-foreground"><strong className="text-foreground">Why: </strong>{o.explanation}</p>
-                    {o.trace.length > 0 && <details className="mt-2 text-xs"><summary className="cursor-pointer">Show condition evaluation</summary><ul>{o.trace.map((t,i)=><li key={i}>{t.label}: {String(t.result)}</li>)}</ul></details>}
-                    <p className="mt-1 text-xs text-muted-foreground">Source retrieved: {o.retrieved_at ?? "not supplied"}</p>
-                    {o.source_url && <a href={o.source_url} target="_blank" rel="noopener noreferrer" className="text-xs underline">Official source</a>}
-                    {o.conflict_note && <p className="mt-1 text-sm text-st-conflict">{o.conflict_note}</p>}
-                    <blockquote className="mt-3 border-l-2 border-primary bg-muted/60 px-3 py-2 source-text">“{o.quoted_span}”</blockquote>
-                    {o.source_doc_id && <Link to="/sources/$docId" params={{ docId: o.source_doc_id }} className="mt-1 inline-block text-xs text-primary underline">Source {o.source_doc_id}</Link>}
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        );
-      })}
-
-      {r.notCurrent.length > 0 && (
-        <section className="paper rounded-sm p-4 text-sm">
-          <div className="eyebrow mb-2">Recorded but not current protections</div>
-          <ul>{r.notCurrent.map((n, i) => <li key={i}><Status value={n.lifecycle} /> {n.title} — {n.jurisdiction} ({n.citation})</li>)}</ul>
+      {overall.tone !== "none" && (
+        <section className="rounded-lg border border-border bg-card p-4 text-sm">
+          <h2 className="font-sans text-sm font-medium text-foreground">How to read this</h2>
+          <ul className="mt-2 grid gap-x-6 gap-y-1.5 md:grid-cols-2">
+            {(["applies", "unknown", "not_yet_effective", "pending"] as const).map((k) => <li key={k} className="flex items-start gap-2"><ResultBadge value={k} className="mt-0.5 shrink-0" /><span className="text-muted-foreground">{RESULT_HELP[k]}</span></li>)}
+          </ul>
+          {(need.facts.length > 0 || need.checks.length > 0) && (
+            <details className="mt-3 border-t border-border pt-3">
+              <summary className="cursor-pointer font-medium text-foreground">What would settle the “may apply” answers ({need.facts.length + need.checks.length} points)</summary>
+              {need.facts.length > 0 && <><p className="mt-2 text-muted-foreground">Facts about the property or tenancy we don't have:</p><ul className="ml-4 list-disc">{need.facts.map((m) => <li key={m}>{m}</li>)}</ul></>}
+              {need.checks.length > 0 && <><p className="mt-2 text-muted-foreground">Conditions in the law that can't be checked from the data:</p><ul className="ml-4 list-disc text-muted-foreground">{need.checks.map((m) => <li key={m}>{m}</li>)}</ul></>}
+              <p className="mt-2 text-xs text-muted-foreground">A missing fact is treated as unknown, never as “no”. The year a building was built is not its certificate-of-occupancy date.</p>
+            </details>
+          )}
         </section>
       )}
+
+      {outs.length > 0 && (
+        <Accordion type="multiple" defaultValue={firstOpen} className="rounded-lg border border-border bg-card px-4">
+          {cats.map(({ cat, list, summary }) => (
+            <AccordionItem key={cat} value={cat} id={cat} className="scroll-mt-20 last:border-b-0">
+              <AccordionTrigger className="hover:no-underline">
+                <span className="flex flex-1 flex-wrap items-center justify-between gap-2 pr-3"><span className="font-serif text-xl text-ink">{CATEGORY_LABEL[cat]}</span><Pill tone={summary.tone}>{summary.parts.join(" · ") || summary.headline}</Pill></span>
+              </AccordionTrigger>
+              <AccordionContent>
+                {list.length ? <CategorySection list={list} /> : <p className="text-muted-foreground">Nothing in the legal texts we have covers this topic for this address. That is a gap in our sources, not a finding that no law exists.</p>}
+              </AccordionContent>
+            </AccordionItem>
+          ))}
+        </Accordion>
+      )}
+
+      {r.notCurrent.length > 0 && (
+        <details className="rounded-lg border border-border bg-card p-4 text-sm">
+          <summary className="cursor-pointer font-medium text-foreground">No longer current or struck down ({r.notCurrent.length})</summary>
+          <ul className="mt-2 space-y-1 text-muted-foreground">{r.notCurrent.map((n, i) => <li key={i}>{n.title} — {n.jurisdiction} · {LIFECYCLE_LABEL[n.lifecycle] ?? n.lifecycle}</li>)}</ul>
+        </details>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        {DISCLAIMER} As of {r.asOf}. Based only on the legal texts supplied to this prototype; some were not available, and most rules were read automatically and not yet checked by a person.
+        {r.resolution && <> Jurisdiction check: <Status value={r.resolution.status} kind="job" /></>}
+      </p>
     </div>
   );
 }

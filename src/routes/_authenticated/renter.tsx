@@ -2,20 +2,23 @@ import { useAsOf } from "@/hooks/useAsOf";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { queryOptions, useQueries, useSuspenseQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { ArrowRight, Search, X } from "lucide-react";
 import { getPortfolio, getPropertyReport } from "@/lib/engine.functions";
 import { CATEGORIES, CATEGORY_LABEL, DEFAULT_AS_OF } from "@/lib/engine/applicability";
-import { Disclaimer, PageHeader, Status } from "@/components/app/ui";
+import { categorySummary, sortOutcomes } from "@/lib/engine/plain";
+import { Disclaimer, Pill, ResultBadge } from "@/components/app/ui";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 const portfolioQ = (asOf: string) => queryOptions({ queryKey: ["portfolio", asOf], queryFn: () => getPortfolio({ data: { asOf } }) });
 
 export const Route = createFileRoute("/_authenticated/renter")({
   head: () => ({
     meta: [
-      { title: "Renter workspace — Housing Law Navigator" },
-      { name: "description", content: "Find rental protections at a sample address, see what is unknown, and compare up to three properties." },
-      { property: "og:title", content: "Renter workspace — Housing Law Navigator" },
-      { property: "og:description", content: "Protections, missing facts and citations by address." },
+      { title: "Find a property — Housing Law Navigator" },
+      { name: "description", content: "Search the sample addresses and open a plain-language report of the rental rules that apply or may apply there." },
+      { property: "og:title", content: "Find a property — Housing Law Navigator" },
+      { property: "og:description", content: "Rental rules by address, with sources." },
     ],
   }),
   validateSearch: (s: Record<string, unknown>): { q?: string } => (typeof s['q'] === "string" && s['q'] ? { q: s['q'] } : {}),
@@ -23,106 +26,154 @@ export const Route = createFileRoute("/_authenticated/renter")({
   component: Renter,
 });
 
+const SHORT: Record<string, string> = {
+  rent_increase_limits: "Rent increases", just_cause_eviction: "Evictions", security_deposits: "Deposits",
+  application_screening_fees: "Application fees", screening_restrictions: "Screening", algorithmic_rent_setting: "Pricing software",
+};
+
 function Renter() {
   const [asOf, setAsOf] = useAsOf();
   const { data } = useSuspenseQuery(portfolioQ(asOf));
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const [limit,setLimit]=useState(40);
+  const [limit, setLimit] = useState(12);
   const q = search.q ?? "";
   const setQ = (v: string) => navigate({ search: v ? { q: v } : {}, replace: true });
   const [picked, setPicked] = useState<string[]>([]);
-  const [advanced, setAdvanced] = useState(false);
-  const list = useMemo(() => {
+  const [table, setTable] = useState(false);
+  const matches = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return data.rows.filter((r) => !s || `${r.property.address_id} ${r.property.street_address} ${r.property.postal_city} ${r.property.zip}`.toLowerCase().includes(s)).slice(0, limit);
-  }, [q, data.rows,limit]);
+    return data.rows.filter((r) => !s || `${r.property.address_id} ${r.property.street_address} ${r.property.postal_city} ${r.property.state} ${r.property.zip} ${r.resolution?.place_name ?? ""}`.toLowerCase().includes(s));
+  }, [q, data.rows]);
+  const list = matches.slice(0, limit);
   const compare = useQueries({
-    queries: picked.map((id) => ({ queryKey: ["report", id, asOf], queryFn: () => getPropertyReport({ data: { addressId: id, asOf } }) })),
+    queries: picked.map((id) => ({ queryKey: ["report", id, asOf], queryFn: () => getPropertyReport({ data: { addressId: id, asOf } }), throwOnError: false })),
   });
-
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= 3 ? p : [...p, id]));
+  const legalCity = (r: (typeof data.rows)[number]) => (r.resolution?.status === "resolved" ? r.resolution.place_name ?? "Outside any city" : null);
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Workspace I · Renter / prospective occupant" title="What protects me at this address?">
-        Search the 500 supplied sample addresses. Results show protection categories, the facts still needed, and the exact source quote behind each rule. Pick up to three to compare legal profiles — this is not a “best property” score.
-      </PageHeader>
-      <Disclaimer asOf={asOf} />
-      <label>As of <Input type="date" className="w-44" value={asOf} onChange={e=>setAsOf(e.target.value)}/></label>
-      {data.ruleCount === 0 && <p className="text-sm text-st-unknown">No rules extracted yet — categories will show as not established until a reviewer runs extraction.</p>}
-      <Input placeholder="Search by street, ZIP, postal city or ID (e.g. A0001)" value={q} onChange={(e) => {setQ(e.target.value);setLimit(40)}} className="max-w-xl" />
-      <button className="text-sm underline" onClick={() => setAdvanced((v) => !v)}>{advanced ? "Show simple result cards" : "Show full table (advanced)"}</button>
-      {!advanced && (
+      <header>
+        <h1 className="font-serif text-3xl text-ink md:text-4xl">Find a property</h1>
+        <p className="mt-2 max-w-2xl text-muted-foreground">Search the 500 sample addresses. Open one to see which rental rules apply or may apply there, what each rule requires, and the legal text behind it. Tick up to three to compare them side by side.</p>
+      </header>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="relative min-w-64 flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input autoFocus placeholder="Street, city, ZIP or sample ID (for example “Clinton St” or “A0001”)" aria-label="Search addresses" value={q} onChange={(e) => { setQ(e.target.value); setLimit(12); }} className="h-11 pl-9" />
+        </div>
+        <label className="text-sm text-muted-foreground">Rules as of
+          <Input type="date" className="mt-1 h-11 w-44" value={asOf} onChange={(e) => e.target.value && setAsOf(e.target.value)} />
+        </label>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+        <span>{q ? `${matches.length} match${matches.length === 1 ? "" : "es"}` : `${data.rows.length} sample addresses`}{picked.length > 0 && ` · ${picked.length} selected to compare`}</span>
+        <button className="underline" onClick={() => setTable((v) => !v)}>{table ? "Show cards" : "Show as a table"}</button>
+      </div>
+
+      {data.ruleCount === 0 && <p className="rounded-md border border-st-unknown/30 bg-st-unknown-bg/60 p-3 text-sm">The legal texts haven't been read yet, so no rules can be shown. This is a preparation step, not a sign that no law applies.</p>}
+
+      {matches.length === 0 && <p className="rounded-md border border-border bg-card p-4 text-sm">No sample address matches “{q}”. This tool only covers the 500 supplied addresses, so an address outside the sample isn't an answer that no law applies.</p>}
+
+      {!table && (
         <div className="grid gap-3 md:grid-cols-2">
-          {list.slice(0, q ? limit : 12).map((r) => (
-            <div key={r.property.id} className="paper rounded-sm p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <Link to="/property/$addressId" params={{ addressId: r.property.address_id }} className="font-serif text-lg text-primary hover:underline">{r.property.street_address}</Link>
-                  <div className="font-mono text-[0.68rem] text-muted-foreground">{r.property.address_id} · {r.property.postal_city}, {r.property.state} {r.property.zip}</div>
+          {list.map((r) => {
+            const city = legalCity(r);
+            return (
+              <article key={r.property.id} className="rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/60">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link to="/property/$addressId" params={{ addressId: r.property.address_id }} className="font-serif text-lg text-ink hover:underline">{r.property.street_address}</Link>
+                    <div className="text-sm text-muted-foreground">{r.property.postal_city}, {r.property.state} {r.property.zip} · {r.property.address_id}</div>
+                  </div>
+                  <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"><input type="checkbox" checked={picked.includes(r.property.address_id)} disabled={!picked.includes(r.property.address_id) && picked.length >= 3} onChange={() => toggle(r.property.address_id)} />Compare</label>
                 </div>
-                <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={picked.includes(r.property.address_id)} onChange={() => toggle(r.property.address_id)} />Compare</label>
-              </div>
-              <div className="mt-2 text-xs">Legal city: {r.resolution?.status === "resolved" ? r.resolution.place_name ?? "unincorporated" : "not yet placed"}</div>
-              <ul className="mt-2 space-y-1 text-sm">
-                {CATEGORIES.map((c) => {
-                  const res = r.category_results?.[c] ?? [];
-                  return <li key={c} className="flex justify-between gap-2"><span>{CATEGORY_LABEL[c]}</span><span className="flex flex-wrap justify-end gap-1">{res.length ? res.map((x) => <Status key={x} value={x} />) : <span className="text-xs text-muted-foreground">not established</span>}</span></li>;
-                })}
-              </ul>
-            </div>
-          ))}
+                <div className="mt-2 text-xs text-muted-foreground">{city ? <>Legal city: <span className="text-foreground">{city}</span></> : "Legal city not confirmed yet — city rules show as “may apply”"}</div>
+                <ul className="mt-3 flex flex-wrap gap-1.5">
+                  {CATEGORIES.map((c) => {
+                    const s = r.category_summary[c];
+                    return <li key={c}><Pill tone={s?.tone ?? "none"} className="gap-1 font-normal"><span className="font-medium">{SHORT[c]}</span>{` · ${(s?.short ?? "None found").toLowerCase()}`}</Pill></li>;
+                  })}
+                </ul>
+                <Link to="/property/$addressId" params={{ addressId: r.property.address_id }} className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">Open report <ArrowRight className="h-3.5 w-3.5" /></Link>
+              </article>
+            );
+          })}
         </div>
       )}
-      {advanced && <div className="paper overflow-x-auto rounded-sm">
+
+      {table && <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <table className="w-full text-sm">
-          <thead className="eyebrow border-b border-border text-left"><tr><th className="p-2">Compare</th><th className="p-2">Address</th><th className="p-2">Postal city</th><th className="p-2">Legal city</th>{CATEGORIES.map((c) => <th key={c} className="p-2">{CATEGORY_LABEL[c]}</th>)}</tr></thead>
+          <thead className="border-b border-border text-left text-xs text-muted-foreground"><tr><th className="p-2 font-medium">Compare</th><th className="p-2 font-medium">Address</th><th className="p-2 font-medium">Legal city</th>{CATEGORIES.map((c) => <th key={c} className="p-2 font-medium">{SHORT[c]}</th>)}</tr></thead>
           <tbody>
             {list.map((r) => (
               <tr key={r.property.id} className="border-b border-border/60 hover:bg-muted/50">
                 <td className="p-2"><input type="checkbox" checked={picked.includes(r.property.address_id)} onChange={() => toggle(r.property.address_id)} aria-label={`Compare ${r.property.street_address}`} /></td>
-                <td className="p-2"><Link to="/property/$addressId" params={{ addressId: r.property.address_id }} className="text-primary underline-offset-2 hover:underline">{r.property.street_address}</Link><div className="font-mono text-[0.68rem] text-muted-foreground">{r.property.address_id} · {r.property.state} {r.property.zip}</div></td>
-                <td className="p-2 text-muted-foreground">{r.property.postal_city}</td>
-                <td className="p-2">{r.resolution?.status === "resolved" ? r.resolution.place_name ?? "unincorporated" : <Status value="unknown" />}</td>
-                {CATEGORIES.map((c) => <td key={c} className="p-2"><span className="flex flex-col gap-0.5">{(r.category_results?.[c] ?? []).length ? r.category_results[c]!.map((x) => <Status key={x} value={x} />) : <Status value={null} />}</span></td>)}
+                <td className="p-2"><Link to="/property/$addressId" params={{ addressId: r.property.address_id }} className="text-primary hover:underline">{r.property.street_address}</Link><div className="text-xs text-muted-foreground">{r.property.address_id} · {r.property.postal_city}, {r.property.state}</div></td>
+                <td className="p-2">{legalCity(r) ?? <span className="text-muted-foreground">not confirmed</span>}</td>
+                {CATEGORIES.map((c) => <td key={c} className="p-2"><span className="flex flex-col items-start gap-0.5">{(r.category_results[c] ?? []).length ? r.category_results[c]!.map((x) => <ResultBadge key={x} value={x} />) : <span className="text-xs text-muted-foreground">—</span>}</span></td>)}
               </tr>
             ))}
           </tbody>
         </table>
       </div>}
 
-      {list.length===0 && <p>No matching address in the supplied sample. This does not mean that no law applies.</p>}
-      {list.length===limit && <button className="underline" onClick={()=>setLimit(n=>n+40)}>Show more addresses</button>}
+      {matches.length > limit && <Button variant="outline" onClick={() => setLimit((n) => n + 24)}>Show more addresses ({matches.length - limit} more)</Button>}
+
       {picked.length > 0 && (
-        <section>
-          <h2 className="mb-1 text-2xl">Legal profile comparison</h2><p className="mb-3 text-xs text-muted-foreground">Same date ({asOf}) for every address. Shows actual terms and citations; there is no overall score.</p>
-          <div className="grid gap-4 md:grid-cols-3">
-            {compare.map((c, i) => {
-              const r = c.data;
-              if (!r) return <div key={i} className="paper rounded-sm p-4 text-sm">Loading…</div>;
-              return (
-                <div key={r.property.address_id} className="paper rounded-sm p-4">
-                  <div className="font-serif text-lg">{r.property.street_address}</div>
-                  <div className="font-mono text-xs text-muted-foreground">{r.property.address_id} · {r.property.postal_city}, {r.property.state}</div>
-                  <ul className="mt-3 space-y-2 text-sm">
-                    {CATEGORIES.map((cat) => {
-                      const outs = r.outcomes.filter((o) => o.category === cat && o.result);
+        <section className="rounded-lg border border-border bg-card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-serif text-2xl text-ink">Side by side</h2>
+            <button className="text-sm underline" onClick={() => setPicked([])}>Clear selection</button>
+          </div>
+          <p className="mb-4 text-sm text-muted-foreground">Same date ({asOf}) for every address. This shows what the rules say, not which property is “better”.</p>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[36rem] text-sm">
+              <thead><tr className="border-b border-border text-left align-bottom"><th className="w-40 p-2 text-xs font-medium text-muted-foreground">Topic</th>
+                {compare.map((c, i) => (
+                  <th key={picked[i]} className="p-2 font-medium">
+                    {c.data ? <>
+                      <Link to="/property/$addressId" params={{ addressId: c.data.property.address_id }} className="text-primary hover:underline">{c.data.property.street_address}</Link>
+                      <div className="text-xs font-normal text-muted-foreground">{c.data.resolution?.status === "resolved" ? c.data.resolution.place_name ?? c.data.property.postal_city : `${c.data.property.postal_city} (city not confirmed)`}, {c.data.property.state}</div>
+                    </> : c.isError ? <span className="text-destructive">Couldn't load {picked[i]}</span> : <span className="text-muted-foreground">Loading {picked[i]}…</span>}
+                    <button aria-label={`Remove ${picked[i]}`} className="ml-1 align-middle text-muted-foreground hover:text-foreground" onClick={() => toggle(picked[i]!)}><X className="inline h-3.5 w-3.5" /></button>
+                  </th>
+                ))}</tr></thead>
+              <tbody>
+                {CATEGORIES.map((cat) => (
+                  <tr key={cat} className="border-b border-border/60 align-top">
+                    <td className="p-2 text-muted-foreground">{CATEGORY_LABEL[cat]}</td>
+                    {compare.map((c, i) => {
+                      const outs = sortOutcomes((c.data?.outcomes ?? []).filter((o) => o.category === cat && o.result));
+                      const s = categorySummary(outs.map((o) => o.result));
                       return (
-                        <li key={cat} className="flex items-start justify-between gap-2 border-b border-border/50 pb-1">
-                          <span>{CATEGORY_LABEL[cat]}</span>
-                          <span className="flex flex-col items-end gap-1 text-right">{outs.length ? outs.map((o) => <span key={o.rule_id} className="block"><Status value={o.result} /><span className="block text-xs">{o.key_value ?? o.title}</span><span className="block text-[0.65rem] text-muted-foreground">{o.citation}{o.missing.length ? ` · ${o.missing.length} facts needed` : ""}</span></span>) : <span className="text-xs text-muted-foreground">not established</span>}</span>
-                        </li>
+                        <td key={picked[i]} className="p-2">
+                          {!c.data ? "…" : <>
+                            <Pill tone={s.tone}>{s.parts.join(" · ") || s.headline}</Pill>
+                            <ul className="mt-1.5 space-y-1.5">
+                              {outs.slice(0, 3).map((o) => (
+                                <li key={o.rule_id} className="text-xs">
+                                  <span className="text-foreground">{o.key_value ?? o.title}</span>
+                                  <span className="block text-muted-foreground">{o.title !== (o.key_value ?? o.title) ? `${o.title} · ` : ""}{o.jurisdiction}{o.conflict_flag ? " · conflict flagged" : ""}</span>
+                                </li>
+                              ))}
+                              {outs.length > 3 && <li className="text-xs text-muted-foreground">+ {outs.length - 3} more in the report</li>}
+                            </ul>
+                          </>}
+                        </td>
                       );
                     })}
-                  </ul>
-                  <div className="mt-3 text-xs text-muted-foreground">{Array.from(new Set(r.outcomes.flatMap((o) => o.missing))).length} distinct facts needed to resolve unknowns.</div>
-                </div>
-              );
-            })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
       )}
+      <Disclaimer asOf={asOf} />
     </div>
   );
 }

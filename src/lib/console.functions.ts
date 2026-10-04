@@ -2,6 +2,7 @@ import { assertDb } from "./db-result";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { balanceFrom, LEDGER_ENTITY } from "./credits.server";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Ctx = { supabase: any; userId: string };
@@ -31,7 +32,7 @@ export const getMonitoring = createServerFn({ method: "POST" })
       s.from("extraction_runs").select("id,status,chunk_index,chunk_count,valid,invalid,error,created_at,model,source_documents!inner(doc_id,dataset_versions!inner(status))").eq("source_documents.dataset_versions.status","active").order("created_at", { ascending: false }).limit(25),
       s.from("jurisdiction_resolutions").select("status,properties!inner(dataset_versions!inner(status))").eq("properties.dataset_versions.status","active").eq("is_current", true).limit(5000),
       s.from("rule_versions").select("review_state,source_documents!inner(dataset_versions!inner(status))").eq("source_documents.dataset_versions.status","active").eq("is_current", true).limit(10000),
-      s.from("audit_log").select("id,actor,action,entity,entity_id,created_at").order("created_at", { ascending: false }).limit(50),
+      s.from("audit_log").select("id,actor,action,entity,entity_id,created_at").neq("action", "assistant.query").order("created_at", { ascending: false }).limit(50),
       s.from("dataset_versions").select("id,status,package_name,created_at,upload_sha256").order("created_at", { ascending: false }).limit(10),
     ]);
     for (const result of [runs,recentRuns,geo,rules,audit,datasets]) assertDb(result);
@@ -60,10 +61,17 @@ export const listUsers = createServerFn({ method: "POST" })
     assertDb(roleResult); const roleRows=roleResult.data;
     const byUser = new Map<string, string[]>();
     for (const r of roleRows ?? []) byUser.set(r.user_id, [...(byUser.get(r.user_id) ?? []), r.role]);
-    return data.users.map((u) => ({
-      id: u.id, email: u.email ?? "", created_at: u.created_at, last_sign_in_at: u.last_sign_in_at ?? null,
-      confirmed: !!u.email_confirmed_at, roles: byUser.get(u.id) ?? [], isSelf: u.id === ctx.userId,
-    }));
+    const ledger = await supabaseAdmin.from("audit_log").select("actor,action,entity,entity_id,detail,created_at").in("action", ["assistant.query", "credits.grant", "credits.request"]).order("created_at", { ascending: true }).limit(10000);
+    assertDb(ledger);
+    const rowsFor = (id: string) => (ledger.data ?? []).filter((r) => (r.action === "assistant.query" ? r.actor === id : r.entity === LEDGER_ENTITY && r.entity_id === id));
+    return data.users.map((u) => {
+      const roles = byUser.get(u.id) ?? [];
+      return {
+        id: u.id, email: u.email ?? "", created_at: u.created_at, last_sign_in_at: u.last_sign_in_at ?? null,
+        confirmed: !!u.email_confirmed_at, roles, isSelf: u.id === ctx.userId,
+        credits: balanceFrom(rowsFor(u.id), roles.includes("admin") || roles.includes("reviewer")),
+      };
+    });
   });
 
 /** Admin-only: grant or revoke a role. Admins cannot remove their own admin role. */

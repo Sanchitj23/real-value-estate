@@ -27,11 +27,14 @@ export function anchorEvidence(text: string, quotes: EvidenceQuote[]) {
 /** Quote matching proves provenance, not that the model interpreted the law correctly. */
 export function validateCandidate(c: Record<string, unknown>, text: string) {
   const errors: string[] = [];
+  /** Scope (coverage/exemptions) problems do not invalidate the provision: the scope stays "unknown" and a warning is kept. */
+  const warnings: string[] = [];
+  const SCOPE_FIELDS = ["coverage", "exemptions"];
   const supporting = z.array(z.object({ field: z.string(), quote: z.string() })).max(30).safeParse(c["supporting_quotes"]);
   if (!supporting.success) errors.push("Invalid supporting_quotes");
   const evidence = anchorEvidence(text, [{ field: "quoted_span", quote: String(c["quoted_span"] ?? "") }, ...(supporting.success ? supporting.data : [])]);
   if (String(c["quoted_span"] ?? "").length < 20 || !evidence[0]?.valid) errors.push("Requirement quote not found in source");
-  for (const e of evidence) if (!e.valid) errors.push(`${e.field}: quote not found in source`);
+  for (const e of evidence) if (!e.valid) (SCOPE_FIELDS.includes(e.field) ? warnings : errors).push(`${e.field}: quote not found in source`);
   const supported = (field: string) => evidence.some((e) => e.field === field && e.valid);
   if (!CATEGORIES.includes(c["category"] as never)) errors.push("Invalid category");
   if (!String(c["title"] ?? "").trim() || !String(c["requirement"] ?? "").trim()) errors.push("Missing title or requirement");
@@ -55,13 +58,13 @@ export function validateCandidate(c: Record<string, unknown>, text: string) {
         const parsed = ExprSchema.safeParse(JSON.parse(String(raw)));
         if (parsed.success && supported(field)) return { expr: parsed.data, status: "conditional" };
       } catch { /* Validation result remains unknown. */ }
-      errors.push(`${field}: validated expression and field-specific quote required`);
+      warnings.push(`${field}: validated expression and field-specific quote required; scope left unknown`);
     } else if (claimed === absent && supported(field)) return { expr: null, status: absent };
-    else if (claimed !== "unknown") errors.push(`${field}: absence of conditions is not evidence of unrestricted scope`);
+    else if (claimed !== "unknown") warnings.push(`${field}: absence of conditions is not evidence of unrestricted scope; scope left unknown`);
     return { expr: null, status: "unknown" };
   };
   const coverage = parseScope("coverage", "unconditional"), exemptions = parseScope("exemptions", "none");
   if (c["key_value"] != null && !supported("key_value")) errors.push("key_value lacks field-specific evidence");
-  return { errors, evidence, dates, legal_status, coverage: coverage.expr, exemptions: exemptions.expr,
+  return { errors, warnings, evidence, dates, legal_status, coverage: coverage.expr, exemptions: exemptions.expr,
     coverage_status: coverage.status, exemptions_status: exemptions.status, valid: errors.length === 0 };
 }
