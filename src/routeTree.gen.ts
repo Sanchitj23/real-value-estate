@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as ChangesRouteImport } from './routes/changes'
+import { Route as ConsoleRouteImport } from './routes/console'
 import { Route as ManagerRouteImport } from './routes/manager'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as RenterRouteImport } from './routes/renter'
@@ -39,6 +40,11 @@ const AuthRoute = AuthRouteImport.update({
 const ChangesRoute = ChangesRouteImport.update({
   id: '/changes',
   path: '/changes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConsoleRoute = ConsoleRouteImport.update({
+  id: '/console',
+  path: '/console',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ManagerRoute = ManagerRouteImport.update({
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/changes': typeof ChangesRoute
+  '/console': typeof ConsoleRoute
   '/manager': typeof ManagerRoute
   '/map': typeof MapRoute
   '/renter': typeof RenterRoute
@@ -95,6 +102,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/changes': typeof ChangesRoute
+  '/console': typeof ConsoleRoute
   '/manager': typeof ManagerRoute
   '/map': typeof MapRoute
   '/renter': typeof RenterRoute
@@ -109,6 +117,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/changes': typeof ChangesRoute
+  '/console': typeof ConsoleRoute
   '/manager': typeof ManagerRoute
   '/map': typeof MapRoute
   '/renter': typeof RenterRoute
@@ -124,6 +133,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/changes'
+    | '/console'
     | '/manager'
     | '/map'
     | '/renter'
@@ -137,6 +147,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/changes'
+    | '/console'
     | '/manager'
     | '/map'
     | '/renter'
@@ -150,6 +161,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/changes'
+    | '/console'
     | '/manager'
     | '/map'
     | '/renter'
@@ -164,6 +176,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   AuthRoute: typeof AuthRoute
   ChangesRoute: typeof ChangesRoute
+  ConsoleRoute: typeof ConsoleRoute
   ManagerRoute: typeof ManagerRoute
   MapRoute: typeof MapRoute
   RenterRoute: typeof RenterRoute
@@ -201,6 +214,13 @@ declare module '@tanstack/react-router' {
       path: '/changes'
       fullPath: '/changes'
       preLoaderRoute: typeof ChangesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/console': {
+      id: '/console'
+      path: '/console'
+      fullPath: '/console'
+      preLoaderRoute: typeof ConsoleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/manager': {
@@ -260,6 +280,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   AuthRoute: AuthRoute,
   ChangesRoute: ChangesRoute,
+  ConsoleRoute: ConsoleRoute,
   ManagerRoute: ManagerRoute,
   MapRoute: MapRoute,
   RenterRoute: RenterRoute,
