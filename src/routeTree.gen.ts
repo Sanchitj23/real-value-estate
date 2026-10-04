@@ -11,10 +11,13 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as ChangesRouteImport } from './routes/changes'
 import { Route as ManagerRouteImport } from './routes/manager'
+import { Route as MapRouteImport } from './routes/map'
 import { Route as RenterRouteImport } from './routes/renter'
 import { Route as ReviewerRouteImport } from './routes/reviewer'
 import { Route as PropertyAddressIdRouteImport } from './routes/property.$addressId'
+import { Route as RulesIdRouteImport } from './routes/rules.$id'
 import { Route as SourcesDocIdRouteImport } from './routes/sources.$docId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -27,9 +30,19 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChangesRoute = ChangesRouteImport.update({
+  id: '/changes',
+  path: '/changes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ManagerRoute = ManagerRouteImport.update({
   id: '/manager',
   path: '/manager',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MapRoute = MapRouteImport.update({
+  id: '/map',
+  path: '/map',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RenterRoute = RenterRouteImport.update({
@@ -47,6 +60,11 @@ const PropertyAddressIdRoute = PropertyAddressIdRouteImport.update({
   path: '/property/$addressId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RulesIdRoute = RulesIdRouteImport.update({
+  id: '/rules/$id',
+  path: '/rules/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SourcesDocIdRoute = SourcesDocIdRouteImport.update({
   id: '/sources/$docId',
   path: '/sources/$docId',
@@ -56,29 +74,38 @@ const SourcesDocIdRoute = SourcesDocIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/changes': typeof ChangesRoute
   '/manager': typeof ManagerRoute
+  '/map': typeof MapRoute
   '/renter': typeof RenterRoute
   '/reviewer': typeof ReviewerRoute
   '/property/$addressId': typeof PropertyAddressIdRoute
+  '/rules/$id': typeof RulesIdRoute
   '/sources/$docId': typeof SourcesDocIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/changes': typeof ChangesRoute
   '/manager': typeof ManagerRoute
+  '/map': typeof MapRoute
   '/renter': typeof RenterRoute
   '/reviewer': typeof ReviewerRoute
   '/property/$addressId': typeof PropertyAddressIdRoute
+  '/rules/$id': typeof RulesIdRoute
   '/sources/$docId': typeof SourcesDocIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/changes': typeof ChangesRoute
   '/manager': typeof ManagerRoute
+  '/map': typeof MapRoute
   '/renter': typeof RenterRoute
   '/reviewer': typeof ReviewerRoute
   '/property/$addressId': typeof PropertyAddressIdRoute
+  '/rules/$id': typeof RulesIdRoute
   '/sources/$docId': typeof SourcesDocIdRoute
 }
 export interface FileRouteTypes {
@@ -86,38 +113,50 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/changes'
     | '/manager'
+    | '/map'
     | '/renter'
     | '/reviewer'
     | '/property/$addressId'
+    | '/rules/$id'
     | '/sources/$docId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
+    | '/changes'
     | '/manager'
+    | '/map'
     | '/renter'
     | '/reviewer'
     | '/property/$addressId'
+    | '/rules/$id'
     | '/sources/$docId'
   id:
     | '__root__'
     | '/'
     | '/auth'
+    | '/changes'
     | '/manager'
+    | '/map'
     | '/renter'
     | '/reviewer'
     | '/property/$addressId'
+    | '/rules/$id'
     | '/sources/$docId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
+  ChangesRoute: typeof ChangesRoute
   ManagerRoute: typeof ManagerRoute
+  MapRoute: typeof MapRoute
   RenterRoute: typeof RenterRoute
   ReviewerRoute: typeof ReviewerRoute
   PropertyAddressIdRoute: typeof PropertyAddressIdRoute
+  RulesIdRoute: typeof RulesIdRoute
   SourcesDocIdRoute: typeof SourcesDocIdRoute
 }
 
@@ -137,11 +176,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/changes': {
+      id: '/changes'
+      path: '/changes'
+      fullPath: '/changes'
+      preLoaderRoute: typeof ChangesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/manager': {
       id: '/manager'
       path: '/manager'
       fullPath: '/manager'
       preLoaderRoute: typeof ManagerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/map': {
+      id: '/map'
+      path: '/map'
+      fullPath: '/map'
+      preLoaderRoute: typeof MapRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/renter': {
@@ -165,6 +218,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PropertyAddressIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/rules/$id': {
+      id: '/rules/$id'
+      path: '/rules/$id'
+      fullPath: '/rules/$id'
+      preLoaderRoute: typeof RulesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sources/$docId': {
       id: '/sources/$docId'
       path: '/sources/$docId'
@@ -178,10 +238,13 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
+  ChangesRoute: ChangesRoute,
   ManagerRoute: ManagerRoute,
+  MapRoute: MapRoute,
   RenterRoute: RenterRoute,
   ReviewerRoute: ReviewerRoute,
   PropertyAddressIdRoute: PropertyAddressIdRoute,
+  RulesIdRoute: RulesIdRoute,
   SourcesDocIdRoute: SourcesDocIdRoute,
 }
 export const routeTree = rootRouteImport
