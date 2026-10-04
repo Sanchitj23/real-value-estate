@@ -97,7 +97,7 @@ function PropertyReport() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Status value={o.result} />
                       <Status value={o.lifecycle} />
-                      <Status value={o.review_state} />
+                      <Status value={o.review_state} kind="review" />
                       {o.conflict_flag && <Status value="conflict" />}
                       <Link to="/rules/$id" params={{ id: o.rule_id }} className="font-serif text-lg text-ink hover:underline">{o.title}</Link>
                     </div>

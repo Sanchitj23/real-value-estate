@@ -50,7 +50,7 @@ function SourcePage() {
     try {
       for (;;) {
         setBusy(`Extracting part ${chunk + 1}…`);
-        const r = await extract({ data: { sourceId: src.data.id, chunkIndex: chunk, force:true } });
+        const r = await extract({ data: { sourceId: src.data.id, chunkIndex: chunk } });
         toast.success(`Part ${r.chunkIndex + 1}/${r.chunkCount}: ${r.valid} valid, ${r.invalid} invalid`);
         if (r.done) break;
         chunk++;
@@ -113,7 +113,7 @@ function SourcePage() {
             {(rules.data ?? []).map((r) => (
               <div key={r.id} className="border-b border-border/60 py-1.5">
                 <Link to="/rules/$id" params={{ id: r.id }} className="text-primary hover:underline">{r.title}</Link>
-                <div className="mt-0.5 flex gap-1"><Status value={r.review_state} /><span className="font-mono text-[0.68rem] text-muted-foreground">v{r.version}</span></div>
+                <div className="mt-0.5 flex gap-1"><Status value={r.review_state} kind="review" /><span className="font-mono text-[0.68rem] text-muted-foreground">v{r.version}</span></div>
               </div>
             ))}
           </div>
@@ -121,7 +121,7 @@ function SourcePage() {
             <div className="eyebrow mb-2">Extraction runs</div>
             {(runs.data ?? []).map((r) => (
               <div key={r.id} className="border-b border-border/60 py-1 text-xs">
-                <Status value={r.status === "done" ? "resolved" : r.status} /> part {r.chunk_index + 1}/{r.chunk_count} · {r.valid} valid / {r.invalid} invalid · <span className="font-mono">{r.model}</span>
+                <Status value={r.status} kind="job" /> part {r.chunk_index + 1}/{r.chunk_count} · {r.valid} valid / {r.invalid} invalid · <span className="font-mono">{r.model}</span>
                 <div className="text-muted-foreground">{new Date(r.created_at).toLocaleString()} {r.error && `— ${r.error}`}</div>
               </div>
             ))}

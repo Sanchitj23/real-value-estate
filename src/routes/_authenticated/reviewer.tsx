@@ -74,7 +74,7 @@ function Reviewer() {
                   <td className="p-2 text-xs">{CATEGORY_LABEL[r.category] ?? r.category}</td>
                   <td className="p-2"><Status value={r.legal_status} /></td>
                   <td className="p-2 font-mono text-xs">{r.effective_date ?? "—"}</td>
-                  <td className="p-2"><Status value={r.review_state} /></td>
+                  <td className="p-2"><Status value={r.review_state} kind="review" /></td>
                   <td className="p-2 font-mono text-xs">{r.confidence ?? "—"}</td>
                 </tr>
               ))}</tbody>
@@ -93,7 +93,7 @@ function Reviewer() {
                     <td className="p-2"><Link to="/sources/$docId" params={{ docId: s.doc_id }} className="font-mono text-primary hover:underline">{s.doc_id}</Link></td>
                     <td className="p-2">{s.jurisdictions}</td>
                     <td className="p-2 text-xs text-muted-foreground">{s.source_type}</td>
-                    <td className="p-2">{s.text_available ? <Status value="in_force" className="!normal-case" /> : <Status value="none" />}<span className="ml-1 text-xs">{s.text_available ? "captured" : "link only / missing"}</span></td>
+                    <td className="p-2"><Status value={s.text_available ? "captured" : "missing_text"} kind="job" /></td>
                     <td className="p-2 font-mono text-xs">{s.retrieved_at}</td>
                     <td className="p-2 text-xs">{rs.length ? `${rs.length} runs · ${rs.reduce((a, r) => a + r.valid, 0)} valid / ${rs.reduce((a, r) => a + r.invalid, 0)} invalid` : "not run"}</td>
                   </tr>
