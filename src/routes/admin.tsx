@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -53,15 +54,15 @@ function Admin() {
       if (ids.size !== props.length || docs.size !== sources.length) throw new Error("Duplicate IDs in file");
       const captured = sources.filter((s: { supplied_text_available: boolean; text: string | null }) => s.supplied_text_available && s.text).length;
       const expected = { properties: props.length, sources: sources.length, captured };
-      const linkOnly = new Map((d.links_only_rows ?? []).map((r: Record<string, string>) => [r.doc_id, r]));
+      const linkOnly = new Map((d.links_only_rows ?? []).map((r: any) => [r.doc_id, r]));
       log("Starting import", 0, 3, `File SHA256 ${hash.slice(0, 16)}… · ${props.length} properties · ${sources.length} sources · ${captured} texts`);
       const start = await fStart({ data: { upload_sha256: hash, format_version: d.format_version, package_metadata: d.package_metadata ?? {}, known_gaps: d.known_gaps ?? [], change_tests: d.change_tests ?? [], rule_record_schema: d.rule_record_schema ?? {}, counts: expected } });
       if (start.alreadyActive) { log("Already imported", 3, 3, "Identical package already active — idempotent, nothing changed."); return; }
-      const strip = (p: Record<string, unknown>) => ({ address_id: p.address_id, street_address: p.street_address, postal_city: p.postal_city ?? null, state: p.state, zip: p.zip ?? null, year_built: p.year_built ?? null, units: p.units ?? null, use_code: p.use_code ?? null, use_description: p.use_description ?? null, source_dataset: p.source_dataset ?? null, retrieved_at: p.retrieved_at ?? null, original_csv_row: p.original_csv_row ?? {} });
+      const strip = (p: any) => ({ address_id: p.address_id, street_address: p.street_address, postal_city: p.postal_city ?? null, state: p.state, zip: p.zip ?? null, year_built: p.year_built ?? null, units: p.units ?? null, use_code: p.use_code ?? null, use_description: p.use_description ?? null, source_dataset: p.source_dataset ?? null, retrieved_at: p.retrieved_at ?? null, original_csv_row: p.original_csv_row ?? {} });
       for (let i = 0; i < props.length; i += 250) await fProps({ data: { datasetId: start.datasetId, rows: props.slice(i, i + 250).map(strip) as never } });
       log("Properties stored", 1, 3, `${props.length} properties stored`);
       for (let i = 0; i < sources.length; i += 6) {
-        const batch = sources.slice(i, i + 6).map((s: Record<string, unknown>) => ({ doc_id: s.doc_id, manifest_row: s.manifest_row, supplied_text_available: !!s.supplied_text_available, text: s.text ?? null, local_text_sha256: s.local_text_sha256 ?? null, manifest_hash_matches_local: s.manifest_hash_matches_local ?? null, link_only_row: linkOnly.get(s.doc_id as string) ?? null }));
+        const batch = sources.slice(i, i + 6).map((s: any) => ({ doc_id: s.doc_id, manifest_row: s.manifest_row, supplied_text_available: !!s.supplied_text_available, text: s.text ?? null, local_text_sha256: s.local_text_sha256 ?? null, manifest_hash_matches_local: s.manifest_hash_matches_local ?? null, link_only_row: linkOnly.get(s.doc_id as string) ?? null }));
         await fSrc({ data: { datasetId: start.datasetId, rows: batch as never } });
         log("Storing sources", 1 + (i + 6) / sources.length, 3);
       }

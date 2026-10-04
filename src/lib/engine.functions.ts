@@ -213,7 +213,7 @@ export const exportSubmission = createServerFn({ method: "GET" })
       };
     }
     if (data.kind === "lookups") {
-      const lookups: Record<string, unknown[]> = {};
+      const lookups: Record<string, Array<{ team_rule_id: string; result: string | null; explanation: string; conflict_flag: boolean }>> = {};
       for (const x of evalAll(inp, DEFAULT_AS_OF)) {
         lookups[x.property.address_id] = x.outcomes.filter((o) => o.result).map((o) => ({ team_rule_id: o.rule_key, result: o.result, explanation: o.explanation, conflict_flag: o.conflict_flag }));
       }
