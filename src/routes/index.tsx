@@ -6,7 +6,7 @@ import { DISCLAIMER } from "@/lib/engine/applicability";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Housing Law Navigator — know which rental rules apply to any property" },
+      { title: "Housing Law Navigator — explore rental rules for sample properties" },
       { name: "description", content: "Rental housing law is scattered across state and city codes. See which rules apply to a property, why, and what changes when the law does." },
       { property: "og:title", content: "Housing Law Navigator" },
       { property: "og:description", content: "Which rental rules apply to a property, with the exact legal quote behind every answer." },
@@ -19,7 +19,7 @@ export const Route = createFileRoute("/")({
 
 const AUDIENCES = [
   { icon: HomeIcon, t: "Renters", b: "Find out what protects you at your address — rent caps, eviction rules, deposits — in plain language with the source quoted." },
-  { icon: Building2, t: "Property managers", b: "See obligations across every property you manage, what's still unclear, and which buildings a new law will touch." },
+  { icon: Building2, t: "Property managers", b: "Inspect obligations and missing facts across the supplied property sample, and compare the effects of hypothetical law changes." },
   { icon: Scale, t: "Legal & policy reviewers", b: "Check every rule against its source text, resolve conflicts between state and city law, and test hypothetical changes." },
 ];
 
@@ -35,8 +35,8 @@ function Landing() {
       </header>
 
       <section className="mx-auto max-w-4xl px-6 pb-20 pt-16 text-center">
-        <h1 className="font-serif text-5xl leading-tight text-ink md:text-6xl">Know exactly which rental rules apply — and <em>why</em>.</h1>
-        <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">Enter an address. Get every applicable housing rule, the exact legal text behind it, and an honest flag where the answer is still uncertain.</p>
+        <h1 className="font-serif text-5xl leading-tight text-ink md:text-6xl">Explore rental rules — and <em>why</em> they may apply.</h1>
+        <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">Search 500 supplied sample addresses in CA, NJ and MA. Inspect rules from captured sources, their supporting legal text, and the facts still needed to establish coverage.</p>
         <div className="mt-8 flex justify-center gap-3">
           <Button asChild size="lg"><Link to="/auth">Get started</Link></Button>
         </div>
@@ -51,7 +51,7 @@ function Landing() {
           <ul className="space-y-4 text-muted-foreground">
             {["Rules are split across state statutes and dozens of city ordinances that can contradict each other.",
               "Whether a rule applies depends on the building — its age, unit count, use — and the date.",
-              "When a law changes, nobody can easily say which properties are affected."].map((t) => (
+              "Evaluating a law change requires checking each property's jurisdiction, relevant facts and the operative dates."].map((t) => (
               <li key={t} className="flex gap-3"><Check className="mt-1 h-4 w-4 shrink-0 text-primary" />{t}</li>
             ))}
           </ul>

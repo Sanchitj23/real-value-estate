@@ -43,7 +43,7 @@ Publish the validated update to the existing hosted project. Report the actual m
 ## Verification performed locally
 
 - TypeScript compilation.
-- Regression tests for the evaluator, temporal precision, typed facts, material changes, evidence, chunk resumption and T1–T5 specification invariants.
+- 42 passing tests, including regressions for the evaluator, temporal precision, typed facts, material changes, evidence, chunk resumption and T1–T5 specification invariants.
 - Production build.
 - All three SQL migrations executed in a temporary PostgreSQL-compatible PGlite database, with synthetic auth fixtures. Checks covered transactional versioning, stale review, failed-write rollback, invalid-candidate retention, direct-history write rejection, admin role grants, field evidence, Unicode quote offsets, atomic geography replacement, source immutability and anonymous read boundaries.
 - All 54 bundled text hashes match their corresponding `local_text_sha256` values. Organizer manifest hash discrepancies remain recorded; matching local hashes does not resolve that provenance gap.
@@ -57,6 +57,7 @@ This is a corrected **hackathon sample platform**, not a finished nationwide com
 - The supplied corpus still lacks 33 captures; some challenge cases may remain blocked by missing evidence. No official scoring script/answer key was supplied.
 - The map is explicitly a coordinate plot with a table fallback, not a street basemap or official jurisdiction-boundary map.
 - Manager views cover the supplied public sample, not saved organization/customer portfolios. Do not import private tenant, owner or customer information into these sample tables.
+- Missing-fact prompts explain what evidence is needed; collecting and verifying supplemental tenancy/ownership facts remains separate product work.
 - Browser jobs persist chunk progress but do not keep running after the tab closes. A durable scheduled worker remains separate work.
 - Only the selected scenario rule version is pinned. Scenario property/geography facts and other rules are current sample inputs; export receipts freeze the full evaluator input. Scenarios do not reconstruct complete historical case law or legislation histories.
 - Provision identities still use document/category/title keys. Review duplicate provisions when re-extraction changes wording. Automatic continuous legal monitoring and complete conflict adjudication are not implemented.
