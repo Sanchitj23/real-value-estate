@@ -39,6 +39,16 @@ vi.mock("@/lib/assistant.functions", () => ({
   requestCredits: async () => ({ ok: true, already: false }),
   grantCredits: async () => ({ ok: true }),
   askAssistant: (...a: unknown[]) => ask(...a),
+  // The free, instant answer: engine results as actionable points, no AI.
+  getInsights: async ({ data }: { data: { question: string; asOf: string } }) => ({
+    as_of: data.asOf, matched: true, headline: "6238 DE LONGPRE AVE: 1 rule applies · 1 rule may apply",
+    insights: [
+      { tone: "applies", title: "Application & screening fees: Synthetic $30 ceiling", detail: "A screening fee may not exceed the stated ceiling.", link: { kind: "rule", id: "r-ca-fee", label: "See the legal text" } },
+      { tone: "unknown", title: "Check: whether the building is covered by the city ordinance", detail: "This decides 1 rule that may apply here.", link: { kind: "property", addressId: "A0001", label: "See those rules" } },
+      { tone: "none", title: "See it in context", detail: "Open the full report or find the address on the map.", link: { kind: "map", address: "A0001", label: "Show on the map" } },
+    ],
+    cards: [{ type: "property", address_id: "A0001", street: "6238 DE LONGPRE AVE", place: "Los Angeles, CA", legal_city: "Los Angeles", categories: [{ category: "application_screening_fees", label: "Application & screening fees", tone: "applies", headline: "1 rule applies" }] }],
+  }),
 }));
 
 vi.mock("@/lib/engine.functions", async () => {
@@ -93,7 +103,7 @@ beforeAll(async () => {
   const { Route: root } = await import("@/routes/__root");
   root.update({ shellComponent: ({ children }: { children: React.ReactNode }) => <>{children}</>, head: () => ({}) } as never);
 });
-afterEach(() => { cleanup(); ask.mockReset(); ledger.used = 0; });
+afterEach(async () => { cleanup(); ask.mockReset(); ledger.used = 0; (await import("@/components/app/Assistant")).resetAssistant(); });
 
 async function open(path: string) {
   const { routeTree } = await import("@/routeTree.gen");
@@ -106,12 +116,12 @@ describe("signed-in pages render their key content", () => {
   it("home leads with the assistant, shows free credits and has no readiness checklist", async () => {
     await open("/dashboard");
     expect(await screen.findByRole("heading", { name: /what do you want to know about a rental/i })).toBeTruthy();
-    expect((await screen.findAllByText(/2 free questions left/i)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/2 free AI summaries left/i)).length).toBeGreaterThan(0);
     expect(screen.queryByText(/system readiness/i)).toBeNull();
     expect(screen.getAllByText("Account").length).toBeGreaterThan(0);
   });
 
-  it("the assistant shows an answer with result cards and the new balance", async () => {
+  it("a question gets instant actionable points, then a plain-language summary and the new balance", async () => {
     ask.mockImplementation(async () => { ledger.used = 1; return reply; });
     const reply = ({ ok: true, answer: "Two rules matter here.\n- **Application fees**: capped [D001]\n\nNot legal advice.", follow_ups: ["What about deposits?"], ai: true, charged: true, as_of: "2026-10-01",
       balance: { unlimited: false, free: 2, granted: 0, used: 1, remaining: 1, requested: false },
@@ -120,20 +130,24 @@ describe("signed-in pages render their key content", () => {
     const box = await screen.findByLabelText("Your question");
     fireEvent.change(box, { target: { value: "What applies at 6238 De Longpre Ave?" } });
     fireEvent.submit(box.closest("form")!);
+    expect(await screen.findByText("6238 DE LONGPRE AVE: 1 rule applies · 1 rule may apply")).toBeTruthy();
+    expect(screen.getByText("Application & screening fees: Synthetic $30 ceiling")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /show on the map/i }).getAttribute("href")).toBe("/map?address=A0001");
     expect(await screen.findByText("Two rules matter here.")).toBeTruthy();
     expect(screen.getByText("1 rule applies")).toBeTruthy();
     expect(screen.getByText("D001")).toBeTruthy();
-    await waitFor(() => expect(screen.getAllByText(/1 free question left/i).length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText(/1 free AI summary left/i).length).toBeGreaterThan(0));
     expect(ask).toHaveBeenCalledWith({ data: { question: "What applies at 6238 De Longpre Ave?", asOf: "2026-10-01" } });
   });
 
-  it("an account out of credits is told so, and browsing stays available", async () => {
+  it("an account out of credits still gets the answer, and is told the AI summary needs credits", async () => {
     ask.mockResolvedValue({ ok: false, reason: "no_credits", balance: { unlimited: false, free: 2, granted: 0, used: 2, remaining: 0, requested: false } });
     await open("/dashboard");
     const box = await screen.findByLabelText("Your question");
     fireEvent.change(box, { target: { value: "Anything about Berkeley?" } });
     fireEvent.submit(box.closest("form")!);
-    expect(await screen.findByText(/you've used your free questions/i)).toBeTruthy();
+    expect(await screen.findByText("Application & screening fees: Synthetic $30 ceiling")).toBeTruthy();
+    expect(await screen.findByText(/you've used your free AI summaries/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /request more credits/i })).toBeTruthy();
   });
 
@@ -164,11 +178,26 @@ describe("signed-in pages render their key content", () => {
     expect(screen.getByRole("heading", { name: /starting soon/i })).toBeTruthy();
   });
 
+  it("a shared link runs its question once", async () => {
+    ask.mockResolvedValue({ ok: false, reason: "no_credits", balance: { unlimited: false, free: 2, granted: 0, used: 2, remaining: 0, requested: false } });
+    await open("/dashboard?ask=What%20applies%20at%206238%20De%20Longpre%20Ave%3F");
+    expect(await screen.findByText("6238 DE LONGPRE AVE: 1 rule applies · 1 rule may apply")).toBeTruthy();
+    expect(screen.getByText("What applies at 6238 De Longpre Ave?")).toBeTruthy();
+  });
+
+  it("the map opens on a linked address and shows its details", async () => {
+    await open("/map?address=A0001&layer=cat:application_screening_fees");
+    expect(await screen.findByText("6238 DE LONGPRE AVE")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /open report/i }).getAttribute("href")).toBe("/property/A0001");
+    expect(screen.getByRole("button", { name: "Application fees" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
   it("the map draws city outlines and one dot per placed address", async () => {
     await open("/map");
     expect(await screen.findByRole("heading", { name: "Map" })).toBeTruthy();
     const svg = await screen.findByRole("img", { name: /map of sample addresses/i });
     await waitFor(() => expect(svg.querySelectorAll("circle").length).toBe(2));
+    expect(screen.getByLabelText("Find an address on the map")).toBeTruthy();
     expect(svg.querySelectorAll("path").length).toBe(1);
     expect(screen.getByText(/2 of 3 sample addresses are on the map/i)).toBeTruthy();
   });

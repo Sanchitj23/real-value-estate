@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
 import { DISCLAIMER } from "@/lib/engine/applicability";
+import { DEMO } from "@/lib/demo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -34,7 +35,7 @@ function AuthPage() {
   useEffect(() => {
     // A password-reset link signs the person in; send them to Account to choose the new password.
     const { data: sub } = supabase.auth.onAuthStateChange((event) => { if (event === "PASSWORD_RECOVERY") nav({ to: "/account", replace: true }); });
-    supabase.auth.getSession().then(({ data }) => { if (data.session) nav({ to: "/dashboard", replace: true }); });
+    supabase.auth.getSession().then(({ data }) => { if (data.session || DEMO) nav({ to: "/dashboard", replace: true }); });
     return () => sub.subscription.unsubscribe();
   }, [nav]);
 
@@ -57,7 +58,7 @@ function AuthPage() {
   }
 
   const title = mode === "in" ? "Sign in" : mode === "up" ? "Create your account" : "Reset your password";
-  const sub = mode === "in" ? "Welcome back." : mode === "up" ? "Free to start: unlimited address look-ups and two assistant questions." : "We'll email you a link to choose a new password.";
+  const sub = mode === "in" ? "Welcome back." : mode === "up" ? "Free to start: unlimited answers and look-ups, and two AI summaries." : "We'll email you a link to choose a new password.";
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-10">

@@ -11,6 +11,8 @@ import { findPreemptionSentence, suggestLinks, type CaseSpec, type LinkRule } fr
 import { matchProperties } from "./address-match";
 import { dateDiff, lawChangeItems } from "./changes-view";
 import { findQuote } from "./quote";
+import { propertyInsights } from "./insights";
+import type { RuleOutcome } from "./applicability";
 
 const property: PropertyLite = {id:"p",address_id:"A1",street_address:"Synthetic Street",postal_city:"Unverified",state:"CA",zip:null,year_built:1990,units:4,use_code:null,use_description:"Residential apartments"};
 const rule: RuleLite = {id:"r",rule_key:"synthetic",version:1,state:"CA",level:"state",city:null,jurisdiction:"CA",category:"rent_increase_limits",title:"Synthetic example",requirement:"Synthetic requirement",key_value:"5%",citation:"Synthetic section",source_url:null,legal_status:"enacted",effective_date:"2026-01-01",expiry_date:null,coverage:null,exemptions:null,coverage_status:"unconditional",exemptions_status:"none",review_state:"reviewed",quoted_span:"Synthetic quote only; not a real law.",confidence:null};
@@ -179,4 +181,18 @@ describe("field-level evidence",()=>{
   it("still needs a real passage for the requirement itself",()=>expect(validateCandidate({...base,quoted_span:"Chaptered"},text).valid).toBe(false));
   it("leaves out a headline value that has no quote, keeping the rule",()=>{const c=validateCandidate({...base,key_value:"$5"},text);expect(c.valid).toBe(true);expect(c.key_value).toBeNull();expect(c.warnings.join(" ")).toContain("key_value");});
   it("keeps a headline value that is quoted",()=>expect(validateCandidate({...base,key_value:"$5",supporting_quotes:[...base.supporting_quotes,{field:"key_value",quote:"may not exceed five dollars"}]},text).key_value).toBe("$5"));
+});
+
+describe("actionable insights for one address",()=>{
+  const o=(p:Partial<RuleOutcome>&{requirement?:string;starts?:string|null}):RuleOutcome=>({rule_id:"r",rule_key:"k",category:"rent_increase_limits",title:"Synthetic cap",jurisdiction:"CA",level:"state",citation:"c",key_value:"5%",review_state:"validated_auto",lifecycle:"in_force",geo:"true",applicability:"true",result:"applies",explanation:"",missing:[],conflict_flag:false,conflict_note:null,assumptions:[],trace:[],...p});
+  const built=propertyInsights({addressId:"A1",legalCity:null,outcomes:[
+    o({}),o({rule_id:"r2",title:"Second cap",key_value:null}),
+    o({rule_id:"u1",category:"just_cause_eviction",result:"unknown",missing:["property.units"]}),o({rule_id:"u2",category:"just_cause_eviction",result:"unknown",missing:["property.units","manual_review:Check the lease"]}),
+    o({rule_id:"f",category:"algorithmic_rent_setting",result:"not_yet_effective",title:"Future ban",starts:"2027-07-01"}),
+  ]});
+  it("leads with what applies, one line per topic, with the headline figure",()=>{expect(built.insights[0]?.title).toBe("Rent increase limits: 5%");expect(built.insights[0]?.detail).toContain("Plus 1 more rule");});
+  it("says what starts later and when",()=>expect(built.insights.some(i=>i.title==="Starts 2027-07-01: Future ban")).toBe(true));
+  it("ranks the fact that settles the most rules first",()=>{const checks=built.insights.filter(i=>i.title.startsWith("Check:"));expect(checks[0]?.title).toContain("How many residential units");expect(checks[0]?.detail).toContain("decides 2 rules");});
+  it("flags an unconfirmed legal city and topics with nothing found",()=>{expect(built.insights.some(i=>/legal city isn't confirmed/.test(i.title))).toBe(true);expect(built.insights.at(-1)?.title).toContain("Security deposits");});
+  it("summarises the counts in the headline",()=>expect(built.headline).toBe("2 rules apply · 2 rules may apply · 1 rule starts later"));
 });

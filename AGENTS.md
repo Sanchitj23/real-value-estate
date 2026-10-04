@@ -26,3 +26,6 @@
 - Assistant credits are an append-only ledger in `audit_log` (`assistant.query`, `credits.grant`, `credits.request`) read with the service role — no extra table; staff are not metered; browsing is never metered.
 - Plain-language labels live in `engine/plain.ts`; the home page is the assistant, and readiness/jobs live only on the staff Data & jobs page.
 - `src/test/pages.test.tsx` renders every signed-in page with in-memory stand-ins; keep it passing when changing a page.
+- Asking a question first returns `getInsights`: a public, AI-free read that turns engine results into actionable points (`engine/insights.ts`); the AI summary is an optional second step that uses a credit. Keep the first step free of AI and accounts.
+- `npm run demo` (Vite mode "demo") skips only the client-side sign-in redirect, and only in a dev build on localhost (`src/lib/demo.ts`). Never widen that gate or let it reach server authorization; production builds strip it.
+- Map tiles are OpenStreetMap standard tiles (no key); CARTO basemaps now require an API key.

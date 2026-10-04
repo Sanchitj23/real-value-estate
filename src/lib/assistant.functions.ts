@@ -11,7 +11,8 @@ import {
 import { QueryDate } from "./engine/dates";
 import { matchProperties } from "./engine/address-match";
 import { lawChangeItems, type ChangeItem } from "./engine/changes-view";
-import { categorySummary, groupMissing, LIFECYCLE_LABEL, RESULT_LABEL, sortOutcomes } from "./engine/plain";
+import { categorySummary, groupMissing, LIFECYCLE_LABEL, RESULT_LABEL, sortOutcomes, type Tone } from "./engine/plain";
+import { propertyInsights, type Insight } from "./engine/insights";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Ctx = { supabase: any; userId: string };
@@ -20,6 +21,8 @@ export type AssistantCard =
   | { type: "property"; address_id: string; street: string; place: string; legal_city: string | null; categories: Array<{ category: string; label: string; tone: string; headline: string }> }
   | { type: "change"; rule_id: string; title: string; jurisdiction: string; kind: ChangeItem["kind"]; effective_date: string | null; key_value: string | null; in_area: number; maybe: number }
   | { type: "rule"; rule_id: string; title: string; jurisdiction: string; category: string; status: string; key_value: string | null };
+
+export type InsightsReply = { as_of: string; headline: string; insights: Insight[]; cards: AssistantCard[]; matched: boolean };
 
 export type AssistantReply =
   | { ok: true; answer: string; follow_ups: string[]; cards: AssistantCard[]; ai: boolean; charged: boolean; balance: CreditBalance; as_of: string }
@@ -113,12 +116,13 @@ function propertyFacts(inp: EngineInputs, p: PropertyLite, asOf: string, cats: s
     type: "property", address_id: p.address_id, street: p.street_address, place: `${p.postal_city ?? ""}, ${p.state}`.replace(/^, /, ""), legal_city: legalCity,
     categories: CATEGORIES.map((c) => { const s = categorySummary(outs.filter((o) => o.category === c).map((o) => o.result)); return { category: c, label: CATEGORY_LABEL[c]!, tone: s.tone, headline: s.headline }; }),
   };
+  const built = propertyInsights({ addressId: p.address_id, legalCity, outcomes: outs.map((o) => { const r = ruleOf.get(o.rule_id); return { ...o, requirement: r?.requirement ?? "", starts: r ? effectiveDateOf(r).date : null }; }) });
   const facts = {
     sample_id: p.address_id, address: p.street_address, postal_city: p.postal_city, state: p.state,
     legal_city: legalCity ?? "not confirmed yet (city rules are shown as May apply)", units: p.units ?? "unknown", year_built: p.year_built ?? "unknown",
     rules, rules_not_listed: Math.max(0, outs.filter((o) => wanted.includes(o.category)).length - rules.length),
   };
-  return { facts, card };
+  return { facts, card, insights: built.insights, headline: built.headline };
 }
 
 const KIND_LABEL: Record<ChangeItem["kind"], string> = { upcoming: "Starts later", proposed: "Proposed, not law", recent: "Started in the last 12 months", struck: "Struck down or failed", expired: "No longer current" };
@@ -143,7 +147,7 @@ function changeFacts(inp: EngineInputs, asOf: string, intent: Intent, q: string,
     ...(matched.length ? { reaches_asked_address: Object.fromEntries(matched.map((p) => [p.address_id, i.in_area_ids.includes(p.address_id) ? "yes, in its area" : i.maybe_ids.includes(p.address_id) ? "unconfirmed (legal city not confirmed)" : "no"])) } : {}),
   }));
   const cards: AssistantCard[] = items.map((i) => ({ type: "change", rule_id: i.rule_id, title: i.title, jurisdiction: i.jurisdiction, kind: i.kind, effective_date: i.effective_date, key_value: i.key_value, in_area: i.in_area_ids.length, maybe: i.maybe_ids.length }));
-  return { facts, cards };
+  return { facts, cards, items };
 }
 
 function ruleFacts(inp: EngineInputs, asOf: string, intent: Intent) {
@@ -160,8 +164,67 @@ function ruleFacts(inp: EngineInputs, asOf: string, intent: Intent) {
   const top = ranked.slice(0, 14);
   const facts = { matching_rules: ranked.length, listed: top.map(({ r, lc }) => ({ title: r.title, where: r.jurisdiction, topic: CATEGORY_LABEL[r.category], status: LIFECYCLE_LABEL[lc], start_date: effectiveDateOf(r).date, key_value: r.key_value, requirement: clip(r.requirement, 220), citation: clip(r.citation, 90), source: r.source_doc_id ?? null })) };
   const cards: AssistantCard[] = top.slice(0, 8).map(({ r, lc }) => ({ type: "rule", rule_id: r.id, title: r.title, jurisdiction: r.jurisdiction, category: r.category, status: LIFECYCLE_LABEL[lc] ?? lc, key_value: r.key_value }));
-  return { facts, cards };
+  return { facts, cards, top, total: ranked.length };
 }
+
+const KIND_TONE: Record<ChangeItem["kind"], Tone> = { upcoming: "future", proposed: "pending", recent: "applies", struck: "superseded", expired: "superseded" };
+const LIFECYCLE_TONE: Record<string, Tone> = { in_force: "applies", future: "future", pending: "pending", failed: "superseded", repealed: "superseded", unknown: "unknown" };
+
+/** Everything the engine can say about a question: facts for the model, cards and actionable insights for the page. */
+function collect(inp: EngineInputs, q: string, intent: Intent, asOf: string) {
+  const matched = matchProperties([q, ...intent.addresses].join(" "), inp.properties, 3);
+  const wantsChange = intent.kind === "law_change" || CHANGE_HINT.test(q);
+  const cards: AssistantCard[] = [];
+  const insights: Insight[] = [];
+  let headline = "";
+  const facts: Record<string, unknown> = { as_of: asOf, scope: "500 sample addresses in CA, NJ and MA; only laws read from the supplied source texts" };
+  if (matched.length) {
+    const briefs = matched.map((p) => propertyFacts(inp, p, asOf, intent.categories));
+    facts["properties"] = briefs.map((b) => b.facts);
+    cards.push(...briefs.map((b) => b.card));
+    if (matched.length === 1) {
+      insights.push(...briefs[0]!.insights);
+      headline = `${matched[0]!.street_address}: ${briefs[0]!.headline}`;
+      insights.push({ tone: "none", title: "See it in context", detail: "Open the full report for every rule and its legal text, or find the address on the map.", link: { kind: "map", address: matched[0]!.address_id, label: "Show on the map" } });
+    } else {
+      headline = `Comparing ${matched.length} addresses`;
+      matched.forEach((p, i) => insights.push({ tone: (briefs[i]!.card.type === "property" ? briefs[i]!.card.categories.find((c) => c.tone !== "none")?.tone as Tone : undefined) ?? "none", title: `${p.street_address}: ${briefs[i]!.headline}`, detail: briefs[i]!.insights[0]?.title ?? "", link: { kind: "property", addressId: p.address_id, label: "Open its report" } }));
+    }
+  }
+  if (wantsChange) {
+    const c = changeFacts(inp, asOf, intent, q, matched);
+    facts["law_changes"] = c.facts;
+    cards.push(...c.cards);
+    for (const i of c.items.slice(0, 5)) insights.push({ tone: KIND_TONE[i.kind], title: `${KIND_LABEL[i.kind]}${i.effective_date ? ` (${i.effective_date})` : ""}: ${i.title}`, detail: `${i.jurisdiction} · reaches ${i.in_area_ids.length} sample address${i.in_area_ids.length === 1 ? "" : "es"}${i.maybe_ids.length ? `, plus ${i.maybe_ids.length} where the legal city isn't confirmed` : ""}.${i.key_value ? ` ${i.key_value}.` : ""}`, link: { kind: "map", layer: `law:${i.rule_id}`, label: "See where on the map" } });
+    if (!headline) headline = c.items.length ? `${c.items.length} law change${c.items.length === 1 ? "" : "s"} match` : "No law changes match";
+    if (c.items.length) insights.push({ tone: "none", title: "See every change and the addresses it reaches", detail: "Starting soon, proposed and recently started laws, with a two-date comparison.", link: { kind: "changes", label: "Open law changes" } });
+  } else if (!matched.length && (intent.city || intent.state || intent.categories.length || intent.topic)) {
+    const r = ruleFacts(inp, asOf, intent);
+    facts["rules"] = r.facts;
+    cards.push(...r.cards);
+    for (const { r: rule, lc } of r.top.slice(0, 5)) insights.push({ tone: LIFECYCLE_TONE[lc] ?? "none", title: `${rule.key_value ?? rule.title}`, detail: `${rule.title} · ${rule.jurisdiction} · ${LIFECYCLE_LABEL[lc] ?? lc}. ${clip(rule.requirement, 140)}`, link: { kind: "rule", id: rule.id, label: "See the legal text" } });
+    headline = `${r.total} rule${r.total === 1 ? "" : "s"} found${intent.city ? ` for ${intent.city}` : intent.state ? ` for ${intent.state}` : ""}`;
+    if (intent.city) insights.push({ tone: "none", title: `See the sample addresses in ${intent.city}`, detail: "Open any of them for the rules that apply at that address.", link: { kind: "list", q: intent.city, label: "List addresses" } });
+  }
+  if (!cards.length) {
+    facts["note"] = "Nothing in the data matched the question. Explain what the tool can answer: a sample street address, a city or state plus a topic, or what laws are changing.";
+    headline = "Nothing in the sample matched that";
+    insights.push({ tone: "none", title: "Try a sample address, a city, or a law", detail: "For example “6238 De Longpre Ave”, “rent increase rules in Berkeley”, or “what is changing in New Jersey”. Only the 500 sample addresses are covered.", link: { kind: "list", q: "", label: "Browse the addresses" } });
+  }
+  return { matched, cards, facts, insights, headline };
+}
+
+/**
+ * Free, instant and needs no account data: matches the question to the sample without any AI call and returns the
+ * engine's results as actionable insights. Reads only the public sample, like the other engine read functions.
+ */
+export const getInsights = createServerFn({ method: "POST" })
+  .inputValidator((d) => z.object({ question: z.string().trim().min(3).max(600), asOf: QueryDate.default(DEFAULT_AS_OF) }).parse(d))
+  .handler(async ({ data }): Promise<InsightsReply> => {
+    const inp = await loadEngineInputs();
+    const c = collect(inp, data.question, heuristicIntent(data.question, inp), data.asOf);
+    return { as_of: data.asOf, headline: c.headline, insights: c.insights, cards: c.cards, matched: c.cards.length > 0 };
+  });
 
 /** Deterministic wording used when the model is unavailable; no credit is charged for it. */
 function templateAnswer(cards: AssistantCard[], asOf: string): string {
@@ -246,26 +309,7 @@ export const askAssistant = createServerFn({ method: "POST" })
     } catch { aiWorked = false; }
 
     const asOf = intent.date && QueryDate.safeParse(intent.date).success ? intent.date : data.asOf;
-    const matched = matchProperties([q, ...intent.addresses].join(" "), inp.properties, 3);
-    const wantsChange = intent.kind === "law_change" || CHANGE_HINT.test(q);
-
-    const cards: AssistantCard[] = [];
-    const facts: Record<string, unknown> = { as_of: asOf, scope: "500 sample addresses in CA, NJ and MA; only laws read from the supplied source texts" };
-    if (matched.length) {
-      const briefs = matched.map((p) => propertyFacts(inp, p, asOf, intent.categories));
-      facts["properties"] = briefs.map((b) => b.facts);
-      cards.push(...briefs.map((b) => b.card));
-    }
-    if (wantsChange) {
-      const c = changeFacts(inp, asOf, intent, q, matched);
-      facts["law_changes"] = c.facts;
-      cards.push(...c.cards);
-    } else if (!matched.length && (intent.city || intent.state || intent.categories.length || intent.topic)) {
-      const r = ruleFacts(inp, asOf, intent);
-      facts["rules"] = r.facts;
-      cards.push(...r.cards);
-    }
-    if (!cards.length) facts["note"] = "Nothing in the data matched the question. Explain what the tool can answer: a sample street address, a city or state plus a topic, or what laws are changing.";
+    const { cards, facts } = collect(inp, q, intent, asOf);
 
     let answer = "", follow_ups: string[] = [], ai = false;
     if (aiWorked) {

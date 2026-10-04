@@ -5,12 +5,14 @@ import { Activity, Building2, CalendarClock, LogOut, Map, Menu, MessageSquareTex
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { DISCLAIMER } from "@/lib/engine/applicability";
+import { DEMO, DEMO_USER } from "@/lib/demo";
 import { creditLine, resetAssistant, useCredits } from "@/components/app/Assistant";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
     const { data, error } = await supabase.auth.getUser();
+    if ((error || !data.user) && DEMO) return { user: DEMO_USER as never };
     if (error || !data.user) throw redirect({ to: "/auth" });
     return { user: data.user };
   },
@@ -94,7 +96,7 @@ function DashboardLayout() {
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-6 md:py-8">
           <Outlet />
         </main>
-        <footer className="border-t border-border px-6 py-3 text-xs text-muted-foreground">{DISCLAIMER} Covers 500 sample addresses in CA, NJ and MA.</footer>
+        <footer className="border-t border-border px-6 py-3 text-xs text-muted-foreground print:hidden">{DISCLAIMER} Covers 500 sample addresses in CA, NJ and MA.{DEMO && " · Local demo mode: no account is signed in."}</footer>
       </div>
     </div>
   );

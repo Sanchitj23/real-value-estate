@@ -1,17 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Minus, Plus, Maximize2 } from "lucide-react";
 
 /**
  * A small dependency-free web map: OpenStreetMap raster tiles, city outlines and address points drawn in SVG.
- * Drag to pan, wheel or buttons to zoom. Web Mercator, integer zoom levels.
+ * Drag to pan, wheel, double-click or buttons to zoom. Web Mercator, integer zoom levels. It fills its parent, and
+ * `children` are drawn on top; mark floating panels with `data-map-ui` so dragging or scrolling them leaves the map alone.
  */
 export type MapPlace = { geoid: string; name: string; state: string; polygons: number[][][][] };
 export type MapPoint = { id: string; lat: number; lon: number; color: string; title: string; dim?: boolean | undefined };
 export type MapArea = { fill: string; opacity: number };
 export type Bounds = { minLat: number; maxLat: number; minLon: number; maxLon: number };
 
-const TILE = 256, MIN_Z = 4, MAX_Z = 17;
+const TILE = 256, MIN_Z = 4, MAX_Z = 18;
+// OpenStreetMap's standard tiles need no key. They are toned down in CSS so the coloured answers stand out.
 const TILE_URL = (z: number, x: number, y: number) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+const TILE_STYLE = "grayscale(0.7) brightness(1.06) contrast(0.9)";
 const worldX = (lon: number, z: number) => ((lon + 180) / 360) * TILE * 2 ** z;
 const worldY = (lat: number, z: number) => { const s = Math.sin((lat * Math.PI) / 180); return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * TILE * 2 ** z; };
 const lonAt = (x: number, z: number) => (x / (TILE * 2 ** z)) * 360 - 180;
@@ -29,10 +32,13 @@ export function mergeBounds(list: Array<Bounds | null>): Bounds | null {
   if (!ok.length) return null;
   return { minLat: Math.min(...ok.map((b) => b.minLat)), maxLat: Math.max(...ok.map((b) => b.maxLat)), minLon: Math.min(...ok.map((b) => b.minLon)), maxLon: Math.max(...ok.map((b) => b.maxLon)) };
 }
+/** A small box around one point, for zooming to a single address. */
+export const aroundPoint = (lat: number, lon: number, d = 0.006): Bounds => ({ minLat: lat - d, maxLat: lat + d, minLon: lon - d * 1.3, maxLon: lon + d * 1.3 });
 
 type View = { lat: number; lon: number; z: number };
+const onUi = (t: EventTarget | null) => t instanceof Element && !!t.closest("[data-map-ui]");
 
-export function SlippyMap({ places, areas, points, selectedPoint, selectedPlace, focus, onPoint, onPlace, height = 520 }: {
+export function SlippyMap({ places, areas, points, selectedPoint, selectedPlace, focus, onPoint, onPlace, children }: {
   places: MapPlace[];
   /** Fill per place geoid; places without an entry are drawn as a plain outline. */
   areas: Record<string, MapArea>;
@@ -43,25 +49,28 @@ export function SlippyMap({ places, areas, points, selectedPoint, selectedPlace,
   focus: { key: string; bounds: Bounds | null };
   onPoint: (id: string) => void;
   onPlace: (geoid: string) => void;
-  height?: number;
+  children?: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
+  const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<View>({ lat: 39, lon: -98, z: 4 });
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const [grabbing, setGrabbing] = useState(false);
   const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null);
+  const width = size.w, height = size.h;
 
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
-    ro.observe(el); setWidth(el.clientWidth);
+    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    const ro = new ResizeObserver(measure);
+    ro.observe(el); measure();
     return () => ro.disconnect();
   }, []);
 
   const fit = useCallback((b: Bounds | null) => {
-    if (!b || !width) return;
-    const pad = 36;
+    if (!b || !width || !height) return;
+    const pad = 48;
     let z = MAX_Z;
     while (z > MIN_Z && (worldX(b.maxLon, z) - worldX(b.minLon, z) > width - pad * 2 || worldY(b.minLat, z) - worldY(b.maxLat, z) > height - pad * 2)) z--;
     setView({ z, lon: lonAt((worldX(b.minLon, z) + worldX(b.maxLon, z)) / 2, z), lat: latAt((worldY(b.minLat, z) + worldY(b.maxLat, z)) / 2, z) });
@@ -70,7 +79,7 @@ export function SlippyMap({ places, areas, points, selectedPoint, selectedPlace,
   // Refit only when the caller asks (focus.key) or the map first gets a size.
   const focusBounds = focus.bounds;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fit(focusBounds); }, [focus.key, width > 0]);
+  useEffect(() => { fit(focusBounds); }, [focus.key, width > 0 && height > 0]);
 
   const cx = worldX(view.lon, view.z), cy = worldY(view.lat, view.z);
   const left = cx - width / 2, top = cy - height / 2;
@@ -91,14 +100,20 @@ export function SlippyMap({ places, areas, points, selectedPoint, selectedPlace,
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    const onWheel = (e: WheelEvent) => { e.preventDefault(); const r = el.getBoundingClientRect(); zoomTo(e.deltaY < 0 ? 1 : -1, { x: e.clientX - r.left, y: e.clientY - r.top }); };
+    let last = 0;
+    const onWheel = (e: WheelEvent) => {
+      if (onUi(e.target)) return;
+      e.preventDefault();
+      const now = Date.now(); if (now - last < 120) return; last = now; // one zoom step per wheel gesture tick
+      const r = el.getBoundingClientRect(); zoomTo(e.deltaY < 0 ? 1 : -1, { x: e.clientX - r.left, y: e.clientY - r.top });
+    };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, [zoomTo]);
 
   const n = 2 ** view.z;
   const tiles: Array<{ key: string; src: string; x: number; y: number }> = [];
-  if (width > 0) {
+  if (width > 0 && height > 0) {
     for (let tx = Math.floor(left / TILE); tx <= Math.floor((left + width) / TILE); tx++) {
       for (let ty = Math.floor(top / TILE); ty <= Math.floor((top + height) / TILE); ty++) {
         if (ty < 0 || ty >= n) continue;
@@ -108,45 +123,57 @@ export function SlippyMap({ places, areas, points, selectedPoint, selectedPlace,
     }
   }
   const pathOf = (p: MapPlace) => p.polygons.map((poly) => poly.map((ring) => ring.map(([lon, lat], i) => `${i ? "L" : "M"}${sx(lon ?? 0).toFixed(1)} ${sy(lat ?? 0).toFixed(1)}`).join("") + "Z").join("")).join("");
-  const radius = view.z >= 12 ? 6 : view.z >= 9 ? 4.5 : 3;
+  const radius = view.z >= 14 ? 9 : view.z >= 12 ? 7 : view.z >= 9 ? 5 : 3.5;
   const clicked = (run: () => void) => () => { if (!drag.current?.moved) run(); };
+  const tip = (text: string) => (e: React.MouseEvent) => { const r = box.current!.getBoundingClientRect(); setHover({ x: e.clientX - r.left, y: e.clientY - r.top, text }); };
+  const chosen = selectedPoint ? points.find((p) => p.id === selectedPoint) ?? null : null;
 
   return (
-    <div ref={box} className="relative w-full touch-none select-none overflow-hidden rounded-lg border border-border bg-muted" style={{ height, cursor: drag.current ? "grabbing" : "grab" }}
-      onPointerDown={(e) => { drag.current = { x: e.clientX, y: e.clientY, moved: false }; }}
+    <div ref={box} className="absolute inset-0 touch-none select-none overflow-hidden bg-[oklch(0.95_0.005_250)]" style={{ cursor: grabbing ? "grabbing" : "grab" }}
+      onPointerDown={(e) => { if (onUi(e.target)) return; drag.current = { x: e.clientX, y: e.clientY, moved: false }; }}
       onPointerMove={(e) => {
         const d = drag.current;
-        if (!d || e.buttons === 0) { drag.current = null; return; }
+        if (!d) return;
+        if (e.buttons === 0) { drag.current = null; setGrabbing(false); return; }
         const dx = e.clientX - d.x, dy = e.clientY - d.y;
         if (!d.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
         drag.current = { x: e.clientX, y: e.clientY, moved: true };
+        if (!grabbing) setGrabbing(true);
         setHover(null);
         setView((v) => ({ z: v.z, lon: lonAt(worldX(v.lon, v.z) - dx, v.z), lat: latAt(worldY(v.lat, v.z) - dy, v.z) }));
       }}
-      onPointerUp={() => { const d = drag.current; window.setTimeout(() => { if (drag.current === d) drag.current = null; }, 0); }}
-      onPointerLeave={() => { drag.current = null; setHover(null); }}
-      onDoubleClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); zoomTo(1, { x: e.clientX - r.left, y: e.clientY - r.top }); }}>
-      {tiles.map((t) => <img key={t.key} src={t.src} alt="" draggable={false} width={TILE} height={TILE} className="pointer-events-none absolute max-w-none" style={{ left: t.x, top: t.y, filter: "grayscale(0.55) contrast(0.92) brightness(1.04)" }} onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />)}
+      onPointerUp={() => { const d = drag.current; setGrabbing(false); window.setTimeout(() => { if (drag.current === d) drag.current = null; }, 0); }}
+      onPointerLeave={() => { drag.current = null; setGrabbing(false); setHover(null); }}
+      onDoubleClick={(e) => { if (onUi(e.target)) return; const r = e.currentTarget.getBoundingClientRect(); zoomTo(1, { x: e.clientX - r.left, y: e.clientY - r.top }); }}>
+      {tiles.map((t) => <img key={t.key} src={t.src} alt="" draggable={false} width={TILE} height={TILE} className="pointer-events-none absolute max-w-none" style={{ left: t.x, top: t.y, filter: TILE_STYLE }} onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />)}
       <svg width={width} height={height} className="absolute inset-0" role="img" aria-label="Map of sample addresses and city outlines">
         {places.map((p) => {
           const a = areas[p.geoid];
           const sel = selectedPlace === p.geoid;
-          return <path key={p.geoid} d={pathOf(p)} fillRule="evenodd" style={{ fill: a?.fill ?? "transparent", fillOpacity: a ? a.opacity : 0, stroke: a?.fill ?? "var(--foreground)", strokeOpacity: sel ? 1 : 0.75, cursor: "pointer" }} strokeWidth={sel ? 3 : 1.5}
-            onClick={clicked(() => onPlace(p.geoid))} onMouseMove={(e) => { const r = box.current!.getBoundingClientRect(); setHover({ x: e.clientX - r.left, y: e.clientY - r.top, text: `${p.name}, ${p.state}` }); }} onMouseLeave={() => setHover(null)} />;
+          return <path key={p.geoid} d={pathOf(p)} fillRule="evenodd" strokeLinejoin="round" style={{ fill: a?.fill ?? "transparent", fillOpacity: a ? a.opacity + (sel ? 0.1 : 0) : 0, stroke: a?.fill ?? "var(--foreground)", strokeOpacity: sel ? 1 : 0.7, cursor: "pointer", transition: "fill 200ms, fill-opacity 200ms, stroke 200ms" }} strokeWidth={sel ? 3 : 1.75}
+            onClick={clicked(() => onPlace(p.geoid))} onMouseMove={tip(`${p.name}, ${p.state}`)} onMouseLeave={() => setHover(null)} />;
         })}
-        {points.filter((p) => p.dim).map((p) => <circle key={p.id} cx={sx(p.lon)} cy={sy(p.lat)} r={radius * 0.8} style={{ fill: p.color, fillOpacity: 0.55, stroke: "var(--card)", cursor: "pointer" }} strokeWidth={0.75}
-          onClick={clicked(() => onPoint(p.id))} onMouseMove={(e) => { const r = box.current!.getBoundingClientRect(); setHover({ x: e.clientX - r.left, y: e.clientY - r.top, text: p.title }); }} onMouseLeave={() => setHover(null)} />)}
-        {points.filter((p) => !p.dim).map((p) => <circle key={p.id} cx={sx(p.lon)} cy={sy(p.lat)} r={selectedPoint === p.id ? radius + 3 : radius} style={{ fill: p.color, stroke: selectedPoint === p.id ? "var(--ink)" : "var(--card)", cursor: "pointer" }} strokeWidth={selectedPoint === p.id ? 2.5 : 1}
-          onClick={clicked(() => onPoint(p.id))} onMouseMove={(e) => { const r = box.current!.getBoundingClientRect(); setHover({ x: e.clientX - r.left, y: e.clientY - r.top, text: p.title }); }} onMouseLeave={() => setHover(null)} />)}
-        {view.z >= 8 && places.map((p) => { const b = placeBounds(p); if (!b) return null; return <text key={`t${p.geoid}`} x={sx((b.minLon + b.maxLon) / 2)} y={sy(b.maxLat) - 6} textAnchor="middle" className="pointer-events-none fill-ink text-[12px] font-medium" style={{ paintOrder: "stroke", stroke: "var(--card)", strokeWidth: 3 }}>{p.name}</text>; })}
+        {points.filter((p) => p.dim).map((p) => <circle key={p.id} cx={sx(p.lon)} cy={sy(p.lat)} r={radius * 0.75} style={{ fill: p.color, fillOpacity: 0.45, stroke: "white", cursor: "pointer", transition: "fill 200ms" }} strokeWidth={1}
+          onClick={clicked(() => onPoint(p.id))} onMouseMove={tip(p.title)} onMouseLeave={() => setHover(null)} />)}
+        {points.filter((p) => !p.dim).map((p) => <circle key={p.id} cx={sx(p.lon)} cy={sy(p.lat)} r={radius} style={{ fill: p.color, stroke: "white", cursor: "pointer", transition: "fill 200ms" }} strokeWidth={1.5}
+          onClick={clicked(() => onPoint(p.id))} onMouseMove={tip(p.title)} onMouseLeave={() => setHover(null)} />)}
+        {chosen && <g className="pointer-events-none">
+          <circle cx={sx(chosen.lon)} cy={sy(chosen.lat)} r={radius + 6} fill="none" stroke="var(--ink)" strokeWidth={2}>
+            <animate attributeName="r" values={`${radius + 4};${radius + 14};${radius + 4}`} dur="1.8s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.9;0.15;0.9" dur="1.8s" repeatCount="indefinite" />
+          </circle>
+          <circle cx={sx(chosen.lon)} cy={sy(chosen.lat)} r={radius + 2} style={{ fill: chosen.color, stroke: "var(--ink)" }} strokeWidth={2.5} />
+        </g>}
+        {view.z >= 8 && places.map((p) => { const b = placeBounds(p); if (!b) return null; return <text key={`t${p.geoid}`} x={sx((b.minLon + b.maxLon) / 2)} y={sy(b.maxLat) - 7} textAnchor="middle" className="pointer-events-none fill-ink text-[12px] font-semibold" style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3.5 }}>{p.name}</text>; })}
       </svg>
-      {hover && <div className="pointer-events-none absolute z-10 max-w-64 rounded-md border border-border bg-card px-2 py-1 text-xs shadow-md" style={{ left: Math.min(hover.x + 12, Math.max(0, width - 200)), top: hover.y + 12 }}>{hover.text}</div>}
-      <div className="absolute right-3 top-3 z-10 flex flex-col overflow-hidden rounded-md border border-border bg-card shadow-sm" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
-        <button type="button" aria-label="Zoom in" className="p-2 hover:bg-muted" onClick={() => zoomTo(1)}><Plus className="h-4 w-4" /></button>
-        <button type="button" aria-label="Zoom out" className="border-t border-border p-2 hover:bg-muted" onClick={() => zoomTo(-1)}><Minus className="h-4 w-4" /></button>
-        <button type="button" aria-label="Fit to selection" className="border-t border-border p-2 hover:bg-muted" onClick={() => fit(focusBounds)}><Maximize2 className="h-4 w-4" /></button>
+      {hover && <div className="pointer-events-none absolute z-20 max-w-64 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-lg" style={{ left: Math.min(hover.x + 14, Math.max(0, width - 220)), top: hover.y + 14 }}>{hover.text}</div>}
+      <div data-map-ui className="absolute bottom-8 right-3 z-10 flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-md">
+        <button type="button" aria-label="Zoom in" className="p-2.5 hover:bg-muted" onClick={() => zoomTo(1)}><Plus className="h-4 w-4" /></button>
+        <button type="button" aria-label="Zoom out" className="border-t border-border p-2.5 hover:bg-muted" onClick={() => zoomTo(-1)}><Minus className="h-4 w-4" /></button>
+        <button type="button" aria-label="Fit to selection" className="border-t border-border p-2.5 hover:bg-muted" onClick={() => fit(focusBounds)}><Maximize2 className="h-4 w-4" /></button>
       </div>
-      <div className="absolute bottom-1 right-1 z-10 rounded-sm bg-card/85 px-1.5 py-0.5 text-[10px] text-muted-foreground">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="underline">OpenStreetMap</a> contributors · outlines: US Census</div>
+      <div data-map-ui className="absolute bottom-1 right-1 z-10 rounded-sm bg-card/85 px-1.5 py-0.5 text-[10px] text-muted-foreground">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="underline">OpenStreetMap</a> contributors · outlines: US Census</div>
+      {children}
     </div>
   );
 }

@@ -46,7 +46,8 @@ export function toRuleLite(row: RuleRow): RuleLite {
   } as RuleLite;
 }
 
-const CACHE_MS = 15_000;
+// The local demo (`npm run demo`) keeps one load for ten minutes so a recording never waits on the database twice.
+const CACHE_MS = import.meta.env.MODE === "demo" ? 600_000 : 15_000;
 let cached: { at: number; value: Promise<EngineInputs> } | null = null;
 
 /**

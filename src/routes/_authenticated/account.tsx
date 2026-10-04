@@ -25,8 +25,8 @@ export const Route = createFileRoute("/_authenticated/account")({
 });
 
 const PLANS = [
-  { name: "Free", who: "For a renter checking one or two homes", price: "No charge", points: [`${FREE_CREDITS} assistant questions`, "Unlimited address look-ups and reports", "Law changes and the map"] },
-  { name: "Manager credits", who: "For property managers who ask often", price: "Credit pack, on request", points: ["Assistant questions on demand", "Side-by-side comparisons and exports", "Credits are added to this account by the team"] },
+  { name: "Free", who: "For a renter checking one or two homes", price: "No charge", points: [`${FREE_CREDITS} plain-language AI summaries`, "Unlimited answers, look-ups and reports", "Law changes and the map"] },
+  { name: "Manager credits", who: "For property managers who ask often", price: "Credit pack, on request", points: ["AI summaries on demand", "Side-by-side comparisons and exports", "Credits are added to this account by the team"] },
 ];
 
 function Account() {
@@ -89,7 +89,7 @@ function Account() {
             <div className="rounded-md bg-muted p-3"><div className="text-muted-foreground">Used</div><div className="font-serif text-2xl text-ink">{b.used}</div></div>
           </div>
         )}
-        <p className="mt-3 text-sm text-muted-foreground">One credit is one assistant question that returns an answer. Looking up addresses, reports, law changes and the map never use credits.</p>
+        <p className="mt-3 text-sm text-muted-foreground">One credit is one plain-language AI summary. The answers themselves, address look-ups, reports, law changes and the map never use credits.</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {PLANS.map((p, i) => (
             <div key={p.name} className={`rounded-md border p-4 ${i === 0 && !b?.granted ? "border-primary" : "border-border"}`}>
