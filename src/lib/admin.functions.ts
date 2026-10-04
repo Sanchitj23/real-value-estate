@@ -341,7 +341,7 @@ export const geocodeBatch = createServerFn({ method: "POST" })
     const out = await Promise.all(((props ?? []) as Array<{ id: string; address_id: string; street_address: string; state: string; zip: string | null }>).map(async (p) => {
       const qs = new URLSearchParams({ street: p.street_address, state: p.state, zip: p.zip ?? "", benchmark: "Public_AR_Current", vintage: "Current_Current", format: "json" });
       const url = `https://geocoding.geo.census.gov/geocoder/geographies/address?${qs}`;
-      let row: Record<string, unknown>;
+      let row: Any;
       try {
         const r = await fetch(url, { headers: { Accept: "application/json" } });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -374,7 +374,7 @@ export const geocodeBatch = createServerFn({ method: "POST" })
       }
       await sb.from("jurisdiction_resolutions").update({ is_current: false }).eq("property_id", p.id).eq("is_current", true);
       await sb.from("jurisdiction_resolutions").insert({ property_id: p.id, benchmark: "Public_AR_Current", vintage: "Current_Current", created_by: ctx.userId, ...row } as never);
-      return { address_id: p.address_id, status: row.status };
+      return { address_id: p.address_id, status: String(row["status"]) };
     }));
     return out;
   });

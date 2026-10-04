@@ -14,7 +14,7 @@ export function findQuote(text: string, quote: string): { start: number; end: nu
   let collapsed = "";
   let prevWs = false;
   for (let k = 0; k < text.length; k++) {
-    const ch = text[k];
+    const ch = text[k] ?? "";
     const ws = /\s/.test(ch);
     if (ws) { if (!prevWs) { collapsed += " "; map.push(k); } prevWs = true; }
     else { collapsed += ch; map.push(k); prevWs = false; }
@@ -22,7 +22,7 @@ export function findQuote(text: string, quote: string): { start: number; end: nu
   const cq = q.replace(/\s+/g, " ");
   const j = collapsed.indexOf(cq);
   if (j < 0) return null;
-  const start = map[j];
-  const end = map[j + cq.length - 1] + 1;
+  const start = map[j] ?? 0;
+  const end = (map[j + cq.length - 1] ?? start) + 1;
   return { start, end, kind: "whitespace" };
 }

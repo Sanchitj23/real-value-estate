@@ -100,8 +100,9 @@ export function cmpDate(a: string, b: string): -1 | 0 | 1 | null {
   const pa = a.split("-"), pb = b.split("-");
   const n = Math.min(pa.length, pb.length);
   for (let i = 0; i < n; i++) {
-    if (pa[i] < pb[i]) return -1;
-    if (pa[i] > pb[i]) return 1;
+    const x = pa[i] ?? "", y = pb[i] ?? "";
+    if (x < y) return -1;
+    if (x > y) return 1;
   }
   return pa.length === pb.length ? 0 : null;
 }

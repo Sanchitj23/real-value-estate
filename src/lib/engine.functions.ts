@@ -26,7 +26,7 @@ function evalAll(inp: EngineInputs, asOf: string, rules = inp.rules) {
 function summarize(outcomes: RuleOutcome[]) {
   const cats: Record<string, ExportResult | null> = {};
   for (const c of CATEGORIES) {
-    const best = outcomes.filter((o) => o.category === c && o.result).sort((a, b) => RANK[b.result!] - RANK[a.result!])[0];
+    const best = outcomes.filter((o) => o.category === c && o.result).sort((a, b) => (RANK[b.result!] ?? 0) - (RANK[a.result!] ?? 0))[0];
     cats[c] = best?.result ?? null;
   }
   return {
@@ -116,7 +116,7 @@ function compareRule(inp: EngineInputs, ruleKey: string, asA: string, rulesA: Ru
   const A = evalAll(inp, asA, rulesA), B = evalAll(inp, asB, rulesB);
   return A.map((x, i) => {
     const a = x.outcomes.find((o) => o.rule_key === ruleKey) ?? null;
-    const b = B[i].outcomes.find((o) => o.rule_key === ruleKey) ?? null;
+    const b = B[i]!.outcomes.find((o) => o.rule_key === ruleKey) ?? null;
     return {
       address_id: x.property.address_id, street: x.property.street_address, postal_city: x.property.postal_city, state: x.property.state,
       units: x.property.units,
@@ -142,7 +142,8 @@ async function runTests(inp: EngineInputs) {
   const sb = publicClient();
   const { data: maps } = await sb.from("semantic_mappings").select("*");
   const mapping = new Map((maps ?? []).map((m) => [m.challenge_rule_id, m.rule_key]));
-  const tests = (inp.dataset?.change_tests ?? []) as Array<Record<string, unknown>>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tests = (inp.dataset?.change_tests ?? []) as any[];
   return tests.map((t) => {
     const ids = (t.rule_ids as string[]) ?? [];
     const unmapped = ids.filter((id) => !mapping.get(id) || !inp.rules.some((r) => r.rule_key === mapping.get(id)));
@@ -219,7 +220,7 @@ export const exportSubmission = createServerFn({ method: "GET" })
       return { as_of: DEFAULT_AS_OF, lookups };
     }
     const tests = await runTests(inp);
-    const out: Record<string, unknown> = {};
+    const out: Record<string, { affected_address_ids: string[]; conflict_flag_address_ids: string[]; notes: string }> = {};
     for (const t of tests) out[t.test_id] = { affected_address_ids: t.affected, conflict_flag_address_ids: t.conflicts, notes: `${t.status}. ${t.note}`.trim() };
     return out;
   });
