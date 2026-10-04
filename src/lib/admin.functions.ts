@@ -36,7 +36,7 @@ export const importStart = createServerFn({ method: "POST" })
     known_gaps: z.array(z.any()),
     change_tests: z.array(z.any()).length(5),
     rule_record_schema: z.record(z.any()),
-    counts: z.object({ properties: z.literal(500), sources: z.literal(87), captured: z.literal(54) }),
+    counts: z.object({ properties: z.literal(500), sources: z.literal(87), captured: z.number().int().min(54).max(87) }),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
@@ -120,7 +120,7 @@ export const importSources = createServerFn({ method: "POST" })
 
 export const importFinish = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ datasetId: z.string().uuid(), expected: z.object({ properties: z.literal(500), sources: z.literal(87), captured: z.literal(54) }) }).parse(d))
+  .inputValidator((d) => z.object({ datasetId: z.string().uuid(), expected: z.object({ properties: z.literal(500), sources: z.literal(87), captured: z.number().int().min(54).max(87) }) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     await requireStaff(ctx, true);
