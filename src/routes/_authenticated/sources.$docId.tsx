@@ -9,7 +9,7 @@ import { Disclaimer, PageHeader, Status } from "@/components/app/ui";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 
-export const Route = createFileRoute("/sources/$docId")({
+export const Route = createFileRoute("/_authenticated/sources/$docId")({
   head: ({ params }) => ({
     meta: [
       { title: `Source ${params.docId} — Housing Law Navigator` },

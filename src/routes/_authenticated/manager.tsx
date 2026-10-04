@@ -7,7 +7,7 @@ import { Disclaimer, PageHeader, Stat, Status, download } from "@/components/app
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
-export const Route = createFileRoute("/manager")({
+export const Route = createFileRoute("/_authenticated/manager")({
   head: () => ({
     meta: [
       { title: "Property manager workspace — Housing Law Navigator" },
