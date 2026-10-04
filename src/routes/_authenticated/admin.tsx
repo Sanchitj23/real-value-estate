@@ -58,8 +58,8 @@ function Admin() {
       if (!String(d.format_version ?? "").startsWith("housing-law-bootstrap/")) throw new Error("Unknown format_version");
       if (ids.size !== props.length || docs.size !== sources.length) throw new Error("Duplicate IDs in file");
       const captured = sources.filter((s: { supplied_text_available: boolean; text: string | null }) => s.supplied_text_available && s.text).length;
-      if(props.length!==500 || sources.length!==87 || captured!==54) throw new Error("Expected 500 properties, 87 sources and 54 captured texts");
-      const expected = { properties: 500 as const, sources: 87 as const, captured: 54 as const };
+      if(props.length!==500 || sources.length!==87 || captured<54) throw new Error("Expected 500 properties, 87 sources and at least the 54 baseline texts (a supplemental version may add more)");
+      const expected = { properties: 500 as const, sources: 87 as const, captured };
       const linkOnly = new Map((d.links_only_rows ?? []).map((r: any) => [r.doc_id, r]));
       log("Starting import", 0, 3, `File SHA256 ${hash.slice(0, 16)}… · ${props.length} properties · ${sources.length} sources · ${captured} texts`);
       const start = await fStart({ data: { upload_sha256: hash, format_version: d.format_version, package_metadata: d.package_metadata ?? {}, known_gaps: d.known_gaps ?? [], change_tests: d.change_tests ?? [], rule_record_schema: d.rule_record_schema ?? {}, counts: expected } });
@@ -82,23 +82,25 @@ function Admin() {
   async function bulkExtract() {
     setStop(false); stopRef.current = false;
     const todo = (await fPlan()).filter(s=>s.chunks.length>0);
-    let i = 0;
+    const parts = todo.reduce((n, s) => n + s.chunks.length, 0);
+    let ok = 0, failed = 0, halted = "";
     for (const s of todo) {
-      if (stopRef.current) break;
-      try {
-        for (const chunk of s.chunks) {
-          if(stopRef.current) break;
+      if (stopRef.current) { halted = "stopped by you"; break; }
+      for (const chunk of s.chunks) {
+        if (stopRef.current) { halted = "stopped by you"; break; }
+        try {
           const r = await fExtract({ data: { sourceId: s.id, chunkIndex: chunk } });
-          log("Extracting", i, todo.length, `${s.doc_id} part ${r.chunkIndex + 1}/${r.chunkCount}: ${r.valid} valid, ${r.invalid} invalid`);
-
+          ok++; log("Extracting", ok + failed, parts, `${s.doc_id} part ${r.chunkIndex + 1}/${r.chunkCount}: ${r.valid} valid, ${r.invalid} invalid`);
+        } catch (e) {
+          failed++; const m = (e as Error).message;
+          log("Extracting", ok + failed, parts, `${s.doc_id} part ${chunk + 1}: FAILED — ${m}`);
+          if (/credits|rate limit|402|429/i.test(m)) { halted = `halted: ${m}`; break; }
         }
-      } catch (e) {
-        log("Extracting", i, todo.length, `${s.doc_id}: ${(e as Error).message}`);
-        if (/credits|rate limit/i.test((e as Error).message)) break;
       }
-      i++; log("Extracting", i, todo.length);
+      if (halted) break;
     }
-    log("Extraction stopped/finished (resumes every unfinished part)", i, Math.max(todo.length, 1));
+    const remaining = parts - ok;
+    log(remaining === 0 ? `Extraction complete: ${ok} parts done` : `Extraction incomplete: ${ok} done, ${failed} failed, ${remaining} still pending${halted ? ` (${halted})` : ""} — run again to resume`, ok, Math.max(parts, 1));
     qc.invalidateQueries();
   }
 
@@ -108,15 +110,19 @@ function Admin() {
     const { data: res } = await supabase.from("jurisdiction_resolutions").select("property_id").eq("is_current", true).eq("status", "resolved").limit(5000);
     const have = new Set((res ?? []).map((r) => r.property_id));
     const todo = (props ?? []).filter((p) => !have.has(p.id)).map((p) => p.id);
+    let processed = 0, resolved = 0, errors = 0, halted = "";
     for (let i = 0; i < todo.length; i += 10) {
-      if (stopRef.current) break;
+      if (stopRef.current) { halted = "stopped by you"; break; }
+      const batch = todo.slice(i, i + 10);
       try {
-        const out = await fGeo({ data: { propertyIds: todo.slice(i, i + 10) } });
+        const out = await fGeo({ data: { propertyIds: batch } });
+        processed += batch.length; resolved += out.filter((o) => o.status === "resolved").length;
         const c = out.reduce((a: Record<string, number>, o) => ({ ...a, [o.status as string]: (a[o.status as string] ?? 0) + 1 }), {});
-        log("Resolving jurisdictions", Math.min(i + 10, todo.length), todo.length, `Batch ${i / 10 + 1}: ${JSON.stringify(c)}`);
-      } catch (e) { log("Resolving jurisdictions", i, todo.length, (e as Error).message); }
+        log("Resolving jurisdictions", processed, todo.length, `Batch ${i / 10 + 1}: ${JSON.stringify(c)}`);
+      } catch (e) { errors += batch.length; log("Resolving jurisdictions", processed, todo.length, `Batch ${i / 10 + 1} FAILED: ${(e as Error).message}`); }
     }
-    log("Jurisdiction resolution finished (resumable)", todo.length, Math.max(todo.length, 1));
+    const unresolved = todo.length - resolved;
+    log(unresolved === 0 ? `All ${todo.length} addresses placed` : `Placement incomplete: ${resolved} placed, ${processed - resolved} not matched, ${errors} errored${halted ? `, ${halted}` : ""} — run again to retry the rest`, processed, Math.max(todo.length, 1));
     qc.invalidateQueries();
   }
 

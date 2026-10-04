@@ -37,7 +37,13 @@ function Changes() {
   const create = useServerFn(createScenario);
   const qc = useQueryClient();
   const [patchJson,setPatchJson]=useState("{}");
-  const [f, setF] = useState({ name: "", rule_key: "", legal_status: "enacted", effective_date: "", as_of: DEFAULT_AS_OF });
+  const [f, setF] = useState({ name: "", rule_key: "", legal_status: "", effective_date: "", as_of: DEFAULT_AS_OF });
+  const buildPatch = () => {
+    const extra = JSON.parse(patchJson || "{}") as Record<string, unknown>;
+    return PatchSchema.parse({ ...(f.legal_status ? { legal_status: f.legal_status } : {}), ...(f.effective_date ? { effective_date: f.effective_date } : {}), ...extra });
+  };
+  let preview = "";
+  try { const p = buildPatch(); preview = Object.keys(p).length ? Object.entries(p).map(([k, v]) => `${k} → ${typeof v === "string" ? v : JSON.stringify(v)}`).join("; ") : "No changes yet"; } catch { preview = "Patch JSON is invalid"; }
 
   return (
     <div className="space-y-6">
@@ -55,8 +61,7 @@ function Changes() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-sm text-primary">{t.test_id}</span>
               <h3 className="font-serif text-xl">{t.title}</h3>
-              <Status value={t.status === "evaluated" ? "pending" : t.status === "partial" ? "ambiguous" : "none"} />
-              <span className="text-xs text-muted-foreground">{t.status}</span>
+              <Status value={t.status} kind="job" />
             </div>
             <p className="mt-1 text-sm text-muted-foreground"><strong>Specification:</strong> {t.expected}</p>
             <p className="mt-1 text-xs">Mapping: {Object.entries(t.mapping).map(([k, v]) => <span key={k} className="mr-3 font-mono">{k} → {v ?? "unmapped"}</span>)}</p>
@@ -84,7 +89,7 @@ function Changes() {
       </section>
 
       <section className="space-y-4">
-        <h2 className="text-2xl">Hypothetical scenarios <span className="ml-2 align-middle"><Status value="pending" /></span></h2>
+        <h2 className="text-2xl">Hypothetical scenarios <span className="ml-2 align-middle"><Status value="hypothetical" /></span></h2>
         <p className="text-sm text-muted-foreground">A scenario is a structured patch on one rule. It never overwrites current law and is always labeled hypothetical.</p>
         {isStaff && (
           <div className="paper grid gap-2 rounded-sm p-4 md:grid-cols-6">
@@ -92,13 +97,14 @@ function Changes() {
             <select className="h-9 rounded-sm border border-input bg-card px-2 text-sm md:col-span-2" value={f.rule_key} onChange={(e) => setF({ ...f, rule_key: e.target.value })}>
               <option value="">Rule to patch…</option>{(rules.data ?? []).map((r) => <option key={r.rule_key} value={r.rule_key}>{r.jurisdiction} · {r.title}</option>)}
             </select>
-            <select className="h-9 rounded-sm border border-input bg-card px-2 text-sm" value={f.legal_status} onChange={(e) => setF({ ...f, legal_status: e.target.value })}>{["enacted", "pending", "failed", "repealed"].map((s) => <option key={s}>{s}</option>)}</select>
-            <Input type="date" title="Hypothetical effective date (optional)" value={f.effective_date} onChange={(e) => setF({ ...f, effective_date: e.target.value })} />
+            <select className="h-9 rounded-sm border border-input bg-card px-2 text-sm" value={f.legal_status} onChange={(e) => setF({ ...f, legal_status: e.target.value })}><option value="">Status: unchanged</option>{["enacted", "pending", "failed", "repealed"].map((s) => <option key={s}>{s}</option>)}</select>
+            <Input type="date" title="Hypothetical effective date (leave blank to keep current)" value={f.effective_date} onChange={(e) => setF({ ...f, effective_date: e.target.value })} />
             <label className="md:col-span-2 text-xs">Evaluation date<Input type="date" value={f.as_of} onChange={e=>setF({...f,as_of:e.target.value})}/></label>
             <label className="md:col-span-4 text-xs">Optional requirement, formula, conditions or exemptions patch (JSON)<Textarea className="font-mono" value={patchJson} onChange={e=>setPatchJson(e.target.value)} placeholder='{"key_value":"5%","requirement":"Hypothetical cap"}'/></label>
+            <p className="md:col-span-6 text-xs text-muted-foreground">Will change only: <span className="font-mono">{preview}</span></p>
             <Button className="md:col-span-6" disabled={!f.name || !f.rule_key} onClick={async () => {
               try {
-                const r = await create({ data: { name: f.name, rule_key: f.rule_key, as_of: f.as_of, patch: PatchSchema.parse({ legal_status: f.legal_status, effective_date: f.effective_date || null, ...JSON.parse(patchJson) }) } });
+                const r = await create({ data: { name: f.name, rule_key: f.rule_key, as_of: f.as_of, patch: buildPatch() } });
                 qc.invalidateQueries({ queryKey: ["scenarios"] }); setSel(r.id); toast.success("Scenario created");
               } catch (e) { toast.error((e as Error).message); }
             }}>Create & evaluate scenario</Button>
