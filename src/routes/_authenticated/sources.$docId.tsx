@@ -106,8 +106,10 @@ function SourcePage() {
             </dl>
           </div>
           {s.text && isStaff && (
+            <div>
             <Button onClick={() => run(false)} disabled={!!busy} className="w-full">{busy ?? (runs.data?.length ? "Resume unfinished parts" : "Run automated extraction")}</Button>
             {!!runs.data?.length && <Button variant="outline" onClick={() => { if (confirm("Re-read every part again? This uses AI credits even for finished parts.")) run(true); }} disabled={!!busy} className="mt-2 w-full">Re-extract all parts (uses credits)</Button>}
+            </div>
           )}
           <div className="paper rounded-sm p-4">
             <div className="eyebrow mb-2">Extracted rules ({rules.data?.length ?? 0})</div>
