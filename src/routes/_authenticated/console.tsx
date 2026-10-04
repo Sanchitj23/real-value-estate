@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-guard";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
 
 export const Route = createFileRoute("/_authenticated/console")({
+  beforeLoad: () => requireStaffPage(false),
   head: () => ({
     meta: [
       { title: "Admin console — monitoring & users — Housing Law Navigator" },

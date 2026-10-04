@@ -45,7 +45,11 @@ export const importStart = createServerFn({ method: "POST" })
     assertDb(existingResult); const existing=existingResult.data;
     if (existing?.status === "active") return { datasetId: existing.id as string, alreadyActive: true };
     if (existing) {
-      if (existing.status !== "staging") throw new Error("This package version is archived or failed; contact an admin before resuming.");
+      if (existing.status !== "staging") {
+        const act = await ctx.supabase.from("dataset_versions").select("id").eq("status","active").maybeSingle();
+        if (act.data) throw new Error("This file is an older version that was replaced. A newer dataset is already active, so there is nothing to import.");
+        throw new Error("This package version previously failed; contact an admin before resuming.");
+      }
       return { datasetId: existing.id as string, alreadyActive: false };
     }
     const { data: row, error } = await ctx.supabase.from("dataset_versions").insert({

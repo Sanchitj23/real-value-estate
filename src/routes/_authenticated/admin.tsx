@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-guard";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,6 +14,7 @@ import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/useAuth";
 
 export const Route = createFileRoute("/_authenticated/admin")({
+  beforeLoad: () => requireStaffPage(false),
   head: () => ({
     meta: [
       { title: "Admin — import, extraction & jobs — Housing Law Navigator" },
