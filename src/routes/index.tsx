@@ -1,72 +1,85 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
-import { getOverview } from "@/lib/engine.functions";
-import { Disclaimer, Stat } from "@/components/app/ui";
-
-const overviewQ = queryOptions({ queryKey: ["overview"], queryFn: () => getOverview() });
+import { Home as HomeIcon, Building2, Scale, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { DISCLAIMER } from "@/lib/engine/applicability";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Housing Law Navigator — rental rules by property, with citations" },
-      { name: "description", content: "What rental-housing rules apply to a property on a date, why, what is uncertain, and which sample properties a law change would affect." },
+      { title: "Housing Law Navigator — know which rental rules apply to any property" },
+      { name: "description", content: "Rental housing law is scattered across state and city codes. See which rules apply to a property, why, and what changes when the law does." },
       { property: "og:title", content: "Housing Law Navigator" },
-      { property: "og:description", content: "Cited, date-aware rental-housing rule applicability across a 500-property sample in CA, NJ and MA." },
+      { property: "og:description", content: "Which rental rules apply to a property, with the exact legal quote behind every answer." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(overviewQ),
-  component: Home,
+  component: Landing,
 });
 
-const WORKSPACES = [
-  { to: "/renter" as const, n: "I", title: "Renter", body: "Look up protections at an address, see missing facts and citations, and compare up to three properties by category." },
-  { to: "/manager" as const, n: "II", title: "Property manager", body: "Inspect the sample portfolio's obligations and unresolved facts, review change impact, and export reports." },
-  { to: "/reviewer" as const, n: "III", title: "Legal / policy reviewer", body: "Read source text, review extracted rules with exact quotes, record interactions, and explore labeled scenarios." },
+const AUDIENCES = [
+  { icon: HomeIcon, t: "Renters", b: "Find out what protects you at your address — rent caps, eviction rules, deposits — in plain language with the source quoted." },
+  { icon: Building2, t: "Property managers", b: "See obligations across every property you manage, what's still unclear, and which buildings a new law will touch." },
+  { icon: Scale, t: "Legal & policy reviewers", b: "Check every rule against its source text, resolve conflicts between state and city law, and test hypothetical changes." },
 ];
 
-function Home() {
-  const { data } = useSuspenseQuery(overviewQ);
-  const c = data.counts;
+function Landing() {
   return (
-    <div className="space-y-10">
-      <section className="grid gap-8 md:grid-cols-[1.4fr_1fr] md:items-end">
-        <div>
-          <div className="eyebrow mb-3">Challenge 02 · Rental Housing Law Intelligence</div>
-          <h1 className="font-serif text-5xl leading-[1.05] text-ink md:text-6xl">
-            What applies here, <em>why</em>, and what is still unknown?
-          </h1>
-          <p className="mt-5 max-w-xl text-muted-foreground">
-            One legal source → an automatically extracted rule with an exact quote → a cited property explanation → portfolio impact → a separately labeled hypothetical change.
-          </p>
+    <div className="min-h-screen bg-background">
+      <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
+        <span className="font-serif text-xl text-ink">Housing Law <em>Navigator</em></span>
+        <div className="flex items-center gap-3">
+          <Link to="/auth" className="text-sm text-muted-foreground hover:text-foreground">Sign in</Link>
+          <Button asChild size="sm"><Link to="/auth">Get started</Link></Button>
         </div>
-        <Disclaimer />
+      </header>
+
+      <section className="mx-auto max-w-4xl px-6 pb-20 pt-16 text-center">
+        <h1 className="font-serif text-5xl leading-tight text-ink md:text-6xl">Know exactly which rental rules apply — and <em>why</em>.</h1>
+        <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">Enter an address. Get every applicable housing rule, the exact legal text behind it, and an honest flag where the answer is still uncertain.</p>
+        <div className="mt-8 flex justify-center gap-3">
+          <Button asChild size="lg"><Link to="/auth">Get started</Link></Button>
+        </div>
       </section>
 
-      {!data.dataset ? (
-        <div className="paper rounded-sm p-6">
-          <h2 className="text-2xl">No dataset imported yet</h2>
-          <p className="mt-2 text-sm text-muted-foreground">An admin needs to upload <span className="font-mono">housing_law_bootstrap.json</span> through the importer. Nothing is seeded by hand.</p>
-          <Link to="/admin" className="mt-4 inline-block rounded-sm bg-primary px-4 py-2 text-sm text-primary-foreground">Open admin importer</Link>
+      <section className="border-y border-border bg-card">
+        <div className="mx-auto grid max-w-6xl gap-10 px-6 py-16 md:grid-cols-2">
+          <div>
+            <div className="eyebrow mb-3">The problem</div>
+            <h2 className="font-serif text-3xl text-ink">Housing law is scattered and constantly changing.</h2>
+          </div>
+          <ul className="space-y-4 text-muted-foreground">
+            {["Rules are split across state statutes and dozens of city ordinances that can contradict each other.",
+              "Whether a rule applies depends on the building — its age, unit count, use — and the date.",
+              "When a law changes, nobody can easily say which properties are affected."].map((t) => (
+              <li key={t} className="flex gap-3"><Check className="mt-1 h-4 w-4 shrink-0 text-primary" />{t}</li>
+            ))}
+          </ul>
         </div>
-      ) : (
-        <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Stat label="Sample properties" value={c!.properties} hint="CA 250 · NJ 140 · MA 110" />
-          <Stat label="Source references" value={c!.sources} hint={`${c!.captured} with captured text`} />
-          <Stat label="Extracted rules" value={c!.rules} hint={`${c!.reviewed} reviewed · ${c!.invalid} invalid`} />
-          <Stat label="Jurisdiction resolved" value={`${c!.resolved}/${c!.properties}`} hint={`${c!.properties - c!.resolved} unresolved`} />
-        </section>
-      )}
-
-      <section className="grid gap-4 md:grid-cols-3">
-        {WORKSPACES.map((w) => (
-          <Link key={w.to} to={w.to} className="paper group rounded-sm p-6 transition-transform hover:-translate-y-0.5">
-            <div className="font-serif text-4xl italic text-primary">{w.n}</div>
-            <h2 className="mt-3 text-2xl text-ink">{w.title}</h2>
-            <p className="mt-2 text-sm text-muted-foreground">{w.body}</p>
-            <div className="mt-4 text-sm text-primary group-hover:underline">Open workspace →</div>
-          </Link>
-        ))}
       </section>
+
+      <section className="mx-auto max-w-6xl px-6 py-16">
+        <div className="eyebrow mb-3 text-center">Who it's for</div>
+        <h2 className="mb-10 text-center font-serif text-3xl text-ink">Built for everyone in the rental picture</h2>
+        <div className="grid gap-5 md:grid-cols-3">
+          {AUDIENCES.map(({ icon: Icon, t, b }) => (
+            <div key={t} className="rounded-md border border-border bg-card p-6">
+              <Icon className="h-6 w-6 text-primary" />
+              <h3 className="mt-4 text-lg font-medium text-foreground">{t}</h3>
+              <p className="mt-2 text-sm text-muted-foreground">{b}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="bg-primary">
+        <div className="mx-auto flex max-w-6xl flex-col items-center gap-5 px-6 py-14 text-center">
+          <h2 className="font-serif text-3xl text-primary-foreground">Start with your first address.</h2>
+          <Button asChild size="lg" variant="secondary"><Link to="/auth">Create a free account</Link></Button>
+        </div>
+      </section>
+
+      <footer className="px-6 py-6 text-center text-xs text-muted-foreground">{DISCLAIMER} Covers a 500-property sample in CA, NJ and MA.</footer>
     </div>
   );
 }
